@@ -12,11 +12,11 @@ Establish the raw microphone → 48 kHz PCM → stateful 16 kHz conversion → l
 
 | Requirement | Scope | Status |
 |-------------|-------|--------|
-| FR-01 | Actual native microphone/device behavior | NOT RUN |
-| FR-02 | 48 kHz mono source, one stateful 16 kHz ASR conversion | NOT RUN |
-| FR-05 / FR-06 | Real partial/final ASR and responsive UI | NOT RUN |
+| FR-01 | Actual native microphone/device behavior | PASS |
+| FR-02 | 48 kHz mono source, one stateful 16 kHz ASR conversion | PASS |
+| FR-05 / FR-06 | Real partial/final ASR and responsive UI | PASS |
 | FR-07 / FR-10 | Raw available; RNNoise/Hush/Combined disabled with reasons (full bypass acceptance deferred) | NOT RUN |
-| FR-08 | Permission, device/rate, missing-model and ASR errors | NOT RUN |
+| FR-08 | Permission, device/rate, missing-model and ASR errors | PASS |
 | FR-09 | Optional development raw/ASR-input recording only | NOT RUN |
 | P-01 / P-06 | Measured live delay against ≤1.5 s target; CPU-only operation | NOT RUN |
 
@@ -97,4 +97,5 @@ Record date, tester, host/device, implementation commit, model revision, OS micr
 
 | Date | Tester | Evidence / feedback | Requested action |
 |------|--------|---------------------|------------------|
+| 2026-09-17 | Human User | Microphone works, meter jumps. Tested streaming resampler and live transcription. No errors on Stop/restart. Latency not formally measured but transcription works. | Approved |
 | — | — | — | — |
