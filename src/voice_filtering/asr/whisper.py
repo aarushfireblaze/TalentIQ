@@ -157,10 +157,15 @@ class ASRScheduler:
             return
         try:
             text = self._transcriber.decode(pcm)
-        except Exception:
+        except Exception as e:
+            print('ASR Decode Error:', e)
+            import traceback
+            traceback.print_exc()
             return
         if not text.strip():
+            print('ASR empty text')
             return
+        print('ASR text:', text)
         with self._lock:
             self._segment_counter += 1
             seg_id = str(uuid.uuid4())
@@ -235,10 +240,15 @@ class ASRScheduler:
             return
         try:
             text = self._transcriber.decode(pcm)
-        except Exception:
+        except Exception as e:
+            print('ASR Decode Error:', e)
+            import traceback
+            traceback.print_exc()
             return
         if not text.strip():
+            print('ASR empty text')
             return
+        print('ASR text:', text)
         with self._lock:
             self._segment_counter += 1
             seg_id = str(uuid.uuid4())
