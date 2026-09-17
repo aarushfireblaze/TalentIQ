@@ -1,0 +1,246 @@
+PRD — Real-Time Voice Filtering & Transcription MVP
+Target environment: ORCA ADE • Laptop microphone • Local/near-local processing
+Product scope
+Voice isolation + background-noise suppression + live transcription UI
+Primary user
+A recruiter/operator speaking into a laptop microphone in a noisy public environment
+Required audio stack
+RNNoise → Hush → ASR transcription
+Agent stack
+ORCA ADE coordinator; OpenCode (MiMo v2.5); Antigravity (Pro); Codex (task-appropriate model, Astra where useful)
+1. Product Summary
+Build a narrow MVP that captures microphone audio from a laptop, removes non-speech background noise, suppresses competing human voices, and streams only the cleaned target speech into a simple live transcription interface. The system is not the full recruiting product; it is an isolated technical subsystem that can later be embedded into a larger application.
+The required processing order is RNNoise first for static/non-speech noise, then Hush for competing-speaker suppression, then an ASR engine for transcription. Each stage must be independently switchable so the team can compare raw, RNNoise-only, Hush-only, and combined output during testing.
+2. Problem Statement
+In career fairs and other crowded spaces, a laptop microphone captures fans, HVAC, keyboard noise, room ambience, and nearby conversations. Standard transcription will often convert nearby speech into text, making the transcript unreliable. The MVP must maximize the intelligibility of the person directly using the laptop while minimizing both environmental noise and competing speech before transcription.
+3. MVP Goal and Non-Goals
+3.1 Goal
+Demonstrate a real-time end-to-end pipeline where one person speaks into a laptop mic in the presence of room noise and nearby people, and the UI displays a substantially cleaner transcript than the unfiltered baseline with low enough latency to feel live.
+3.2 Non-Goals
+Do not build the recruiting dashboard, candidate database, resume ingestion, ranking, filtering, or note-taking product.
+Do not build cloud accounts, authentication, multi-user permissions, or production deployment infrastructure.
+Do not train Hush or RNNoise from scratch.
+Do not attempt perfect source separation or forensic speaker identification.
+Do not optimize for mobile devices in the MVP.
+Do not add summarization, LLM analysis, or interview-question generation.
+4. Critical Product Assumption
+Hush is a real-time speech-enhancement model designed to suppress background speakers, but it is not a target-speaker identity-verification system. For this MVP, assume the intended speaker is the person closest to and most acoustically dominant at the laptop microphone. If the product later needs to guarantee “keep this exact enrolled person even when someone else is louder,” add a separate speaker-enrollment / speaker-verification layer as a future enhancement.
+5. User Experience
+5.1 Primary Flow
+User opens the local web/desktop interface.
+User grants microphone permission and selects the desired input device.
+User presses Start.
+A small status indicator shows microphone activity and pipeline health.
+Live transcript appears continuously in the main text area.
+User can toggle Raw / RNNoise / Hush / Combined for testing and demonstration.
+User presses Stop; the final transcript remains visible and can be copied or cleared.
+5.2 Minimal UI
+Start / Stop recording button.
+Microphone selector.
+Live input level meter.
+Pipeline mode selector: Raw, RNNoise only, Hush only, Combined.
+Large streaming transcript panel.
+Status text: Idle, Listening, Processing, Error.
+Clear Transcript and Copy Transcript controls.
+Optional developer panel for latency, dropped frames, sample rate, and per-stage timing.
+6. Functional Requirements
+ID
+Requirement
+Acceptance behavior
+FR-01
+Microphone capture
+Capture mono microphone audio continuously from the selected laptop input.
+FR-02
+Canonical audio format
+Normalize incoming audio to a canonical internal PCM stream. Hush input must be 16 kHz; RNNoise integration may process at its native 48 kHz and resample once at the stage boundary, or use a validated wrapper that handles the conversion. Avoid repeated resampling.
+FR-03
+RNNoise stage
+Apply RNNoise to suppress stationary/non-speech noise such as fans, HVAC, hum, keyboard noise, and ambient room noise.
+FR-04
+Hush stage
+Apply Hush after RNNoise to suppress competing human speech while preserving the dominant/near-field speaker.
+FR-05
+Streaming ASR
+Feed filtered audio into a replaceable ASR adapter and emit partial/final transcript segments. The MVP may use a local Whisper-family implementation; the audio-filter pipeline must not depend on one ASR vendor.
+FR-06
+Real-time UI
+Display partial transcript updates without blocking audio processing.
+FR-07
+Bypass modes
+Allow Raw, RNNoise-only, Hush-only, and Combined modes without restarting the app.
+FR-08
+Error handling
+Surface missing microphone permission, unavailable model files, incompatible sample rate, audio-device failure, and ASR failure.
+FR-09
+Local recording for QA
+In development mode, optionally save short raw and processed WAV captures with timestamped filenames for A/B testing. Off by default in normal use.
+FR-10
+No silent fallback
+If Hush or RNNoise fails to load, the UI must say which stage is unavailable instead of silently pretending filtering is active.
+7. Technical Architecture
+Recommended architecture: a lightweight local frontend for controls/transcript, plus a local audio-processing service responsible for capture, buffering, DSP/model inference, and ASR. Keep the audio pipeline independent of the UI so it can later be embedded into another product.
+7.1 Pipeline
+1. Laptop microphone
+2. Audio capture + ring buffer
+3. Format normalization / resampling
+4. RNNoise — non-speech/background-noise suppression
+5. Resample to 16 kHz if necessary
+6. Hush — competing-speaker suppression
+7. ASR adapter — partial and final transcription
+8. Local event/API stream
+9. Simple transcript UI
+7.2 Processing Constraints
+Hush operates at 16 kHz and is designed for real-time CPU inference. Preserve its expected frame/hop behavior rather than feeding arbitrary chunk sizes.
+Use bounded queues/ring buffers. Audio capture must never wait on ASR or UI rendering.
+Every stage exposes timing metrics so latency regressions are measurable.
+Model loading occurs once at startup; do not reload per utterance.
+Prefer ONNX/native deployment for Hush in the final MVP path if integration is stable; PyTorch is acceptable for an initial spike.
+Keep RNNoise and Hush wrappers behind clean interfaces so either implementation can be swapped without rewriting the app.
+7.3 Suggested Internal Interfaces
+Define interfaces before agent implementation to prevent the codebase from turning into one tightly coupled audio script.
+Component
+Contract
+AudioSource
+start() / stop() / read_frame() → timestamped mono PCM frames
+NoiseSuppressor
+process(frame) → denoised frame
+SpeakerSuppressor
+process(frame) → target-dominant frame
+Transcriber
+push_audio(frame); emits partial/final TranscriptEvent objects
+PipelineController
+switch_mode(mode); owns queues, stage lifecycle, metrics
+UI transport
+status events + transcript events + metric events; no audio-model logic in UI
+8. ASR Choice for MVP
+ASR is intentionally secondary to this PRD. Use a local Whisper-family implementation with streaming/chunked partial updates as the default integration, but wrap it behind the Transcriber interface. The acceptance test is not “best possible ASR”; it is “the combined audio filter produces measurably fewer false words from background speakers than raw audio.”
+Do not spend a large amount of time optimizing ASR until the raw-vs-filtered audio recordings prove that the filtering pipeline itself works.
+9. Performance & Quality Requirements
+ID
+Metric
+Target
+P-01
+Perceived latency
+Transcript should feel live; target end-to-end partial-text delay ≤ 1.5 s in normal laptop conditions.
+P-02
+Audio pipeline stability
+No audible/processing buffer runaway during a continuous 10-minute session.
+P-03
+Background noise
+In a fan/HVAC/keyboard test, RNNoise/Combined should reduce obvious noise without making primary speech unintelligible.
+P-04
+Competing speech
+With a second speaker several feet away at a lower/moderate level, Combined should produce materially fewer words from that speaker than Raw.
+P-05
+Primary speech retention
+The dominant near-field speaker remains understandable and transcribable; suppression must not erase normal phrases.
+P-06
+Resource target
+MVP should run on a modern laptop CPU without requiring a discrete GPU.
+P-07
+Mode switching
+Switching between pipeline modes takes effect during a session without crashing or corrupting transcript state.
+10. Test Plan
+Agents must build the test harness early. The project is not done when audio passes through the models; it is done when the combined path wins against a raw baseline in repeatable scenarios.
+Scenario
+Setup
+Pass criterion
+T1 — Quiet room
+Primary speaker only.
+Combined transcript should be close to Raw; filtering must not noticeably damage speech.
+T2 — Static room noise
+Primary speaker + fan/HVAC/keyboard.
+RNNoise and Combined should outperform Raw on transcript cleanliness and recorded audio quality.
+T3 — Competing speaker
+Primary speaker near laptop + second person farther away speaking concurrently.
+Hush and Combined should insert fewer background-speaker words than Raw.
+T4 — Mixed noise
+Primary speaker + fan + nearby conversation.
+Combined should be the strongest overall mode.
+T5 — Stress
+10-minute continuous capture with intermittent speech and noise.
+No crash, runaway memory, stuck queue, or severe latency growth.
+T6 — Loud interferer
+Second speaker temporarily becomes very loud/close.
+Document failure behavior. This is a known edge case; do not fake success.
+11. Instrumentation
+Capture timestamp and sequence number for every frame entering the pipeline.
+Track queue depth between stages.
+Track average and p95 processing time for RNNoise, Hush, and ASR.
+Track dropped/late audio frames.
+Track ASR partial-to-final delay.
+Development A/B mode should save raw.wav, rnnoise.wav, hush.wav, and combined.wav for the same test clip when feasible.
+12. Project Structure
+Suggested repository layout (agents may adjust names, but separation of concerns should remain):
+apps/ui/ — minimal transcript frontend
+src/audio/capture/ — device enumeration, mic capture, buffering
+src/audio/rnnoise/ — RNNoise wrapper
+src/audio/hush/ — Hush wrapper/model loading
+src/audio/resample/ — sample-rate conversion utilities
+src/asr/ — transcriber interface + selected implementation
+src/pipeline/ — orchestration, queues, mode switching, metrics
+tests/audio/ — deterministic WAV-based tests
+tests/integration/ — end-to-end pipeline tests
+scripts/ — model setup, benchmark, A/B capture utilities
+docs/ — setup, architecture decisions, benchmark results
+progress.md — ORCA coordinator status, completed work, blockers, next tasks
+13. Agent Work Allocation
+ORCA should coordinate work through small, independently verifiable milestones. Do not let multiple agents simultaneously rewrite the same core pipeline files. Each agent should leave tests, a concise progress update, and exact run commands.
+Agent
+Model guidance
+Primary ownership
+Required output
+OpenCode
+MiMo v2.5
+Repo scaffolding, simple UI, plumbing, test harness, routine integration tasks.
+Working code + unit/integration tests + progress.md update.
+Antigravity
+Pro model
+Architecture review, difficult cross-component integration, performance bottlenecks, failure analysis.
+Architecture decisions, reviewed implementation, benchmark findings.
+Codex
+Choose model by task; use stronger reasoning/Astra when the task is genuinely hard.
+Native audio/model wrappers, concurrency, debugging, benchmarking, code review, targeted fixes.
+Focused commits/worktrees with verification commands and no speculative rewrites.
+ORCA coordinator
+Coordinator role
+Sequence tasks, prevent duplicate work, maintain acceptance checklist, merge only verified work.
+progress.md as source of truth; integration checkpoints after each milestone.
+14. Recommended Implementation Milestones
+M0 — Baseline: Mic → raw WAV/live level → ASR → transcript UI. No filtering. Establish a known-working baseline.
+M1 — RNNoise: Add RNNoise wrapper and RNNoise-only mode. Validate with static-noise test WAVs and live mic.
+M2 — Hush offline: Run Hush successfully on deterministic 16 kHz WAV fixtures. Verify model loading and output shape before streaming.
+M3 — Hush streaming: Integrate Hush into live frame pipeline with timing metrics and Hush-only mode.
+M4 — Combined pipeline: RNNoise → resample boundary → Hush → ASR. Add Combined mode and bounded queues.
+M5 — A/B evaluator: Same test scenario can be compared across Raw, RNNoise, Hush, Combined. Save sample outputs and benchmark numbers.
+M6 — UX hardening: Device selector, status/errors, clear/copy transcript, stable 10-minute run.
+M7 — Final acceptance: Run T1–T6, record results, known limitations, and exact startup instructions.
+15. Definition of Done
+A new developer can follow README setup instructions and run the MVP locally.
+Mic capture, RNNoise, Hush, and ASR all work in one continuous session.
+Raw / RNNoise / Hush / Combined modes are available and clearly labeled.
+Combined mode produces fewer competing-speaker transcript intrusions than Raw in the documented T3 test.
+Combined mode reduces static-noise impact in the documented T2 test.
+Primary near-field speech remains intelligible in T1–T4.
+10-minute stress test completes without crash or unbounded latency growth.
+Failure states are surfaced explicitly.
+Benchmark/test results and known limitations are documented.
+progress.md shows all MVP milestones complete with verification commands.
+16. Known Risks / Failure Modes
+Wrong speaker retained: If a background person is louder or much closer, Hush may not preserve the intended identity. MVP mitigation: near-field dominant-speaker assumption; future mitigation: enrolled speaker verification/conditioning.
+Resampling artifacts: RNNoise and Hush have different native expectations. Mitigation: one explicit, tested stage boundary and high-quality resampling; no repeated conversions.
+Latency accumulation: ASR batching or synchronous model calls can make “real time” feel delayed. Mitigation: separate capture/inference/UI queues and instrument every stage.
+Speech damage: Aggressive suppression can harm the primary voice. Mitigation: compare all four modes against clean-speech fixtures and do not optimize only for noise removal.
+Environment mismatch: Very loud background speech may exceed Hush training conditions. Mitigation: include T6 and document limits rather than masking them.
+Native dependency friction: RNNoise/native libraries and Hush deployment binaries may differ by OS. Mitigation: lock tested versions, automate setup, and keep wrappers isolated.
+17. Future Enhancements (Explicitly Out of MVP)
+Speaker enrollment / voiceprint conditioning to guarantee a specific person is retained.
+Automatic microphone beamforming or multi-mic spatial separation.
+Echo cancellation for speakerphone use.
+Cloud transcription and multi-device deployment.
+Recruiting-app integration, candidate association, summaries, and searchable notes.
+Automatic adaptive mode selection based on detected noise/interference.
+18. Technical References
+Hush model card (Weya AI / Hugging Face): describes real-time background-speaker suppression, 16 kHz input, CPU operation, causal inference, and known limitations.
+RNNoise: recurrent-neural-network speech noise suppression library; use as the non-speech/static-noise stage before Hush.
+Agents should pin exact dependency/model revisions in the repository rather than relying on “latest” at runtime.
