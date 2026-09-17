@@ -14,8 +14,8 @@ Required final order: microphone → RNNoise → one explicit 16 kHz resampling 
 
 | Milestone | Deliverable | State | Human test |
 |---|---|---|---|
-| Architecture | Interfaces, dependency feasibility, scoped implementation briefs | Starting | No extra approval required for the supplied PRD |
-| M0 | Raw mic, level meter, optional WAV, local ASR and transcript UI | Pending architecture | H0: select mic, speak, stop/restart, copy/clear, inspect transcript and delay |
+| Architecture | Interfaces, dependency feasibility, scoped implementation briefs | Complete: `dace574` | No extra approval required for the supplied PRD |
+| M0 | Raw mic, level meter, optional WAV, local ASR and transcript UI | Implementation delegated in child worktree | H0: select mic, speak, stop/restart, copy/clear, inspect transcript and delay |
 | M1 | RNNoise wrapper and live mode | Held until H0 feedback | H1: compare raw vs RNNoise with fan/typing and primary voice |
 | M2 | Deterministic Hush offline validation | Pending; may proceed independently after contracts | Evidence of real model inference, sample/frame semantics and output shape |
 | M3–M4 | Streaming Hush and Combined path | Held for earlier checkpoints | H2: near-field voice with distant competing speaker, switch modes live |
@@ -45,3 +45,12 @@ Human gates require actual user feedback; automated tests never count as the use
 - M1 is represented by task `task_64f8c2de368e`, blocked by human gate `gate_150349ca6493`. Do not resolve without user feedback or explicit waiver.
 - Antigravity is installed as a desktop app but a supported supervised CLI launch route has not been established. Do not claim Antigravity review occurred. Codex covers architecture now.
 - Next: accept architecture/contracts and acceptance documents, then delegate M0 implementation and independent review.
+
+## Completed preparation
+
+- Acceptance/checkpoint documentation delivered in commit `70e726a`. All product tests remain NOT RUN. The coordinator reviewed drafts and requested corrections to Start ordering, speaker passages and fair comparisons. Worker release returned `retained` because the MiMo terminal was externally created; it is settled and has no new task.
+- Documentation issues to resolve in the next child documentation/review task: acceptance metric table still says `0 target` for drops (aspirational, not a PRD threshold); handoff sequence places H2 before M4 although H2 tests Combined; repeat live sessions may be exploratory but must not substitute for same-input comparative acceptance.
+- Architecture completed in `dace574`; accepted native sounddevice capture, a local Python/SSE service, static UI and pinned local CPU Whisper baseline. Candidate dependency pins still require installation validation. Architecture worker released after its valid completion report.
+- M0 builder: OpenCode MiMo v2.5, child `voice-m0-baseline`, task `task_4ab0a7f16863`; base `dace574`. Child path: `/Users/aarushgupta/orca/workspaces/TalentIQ - Background filtering + AI transcribe/voice-m0-baseline`.
+- Checkpoint reconciliation: Codex, child `voice-checkpoint-docs`, task `task_8a6478c74e7b`, dispatch `ctx_e2a08871a62a`; owns only acceptance/checkpoint docs and its report. This worker is resolving the documentation issues above. Base `dace574`.
+- Both new worktrees are children of this main worktree. Independent M0 code review will also run in a child worktree. No product test has passed yet.
