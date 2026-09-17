@@ -143,7 +143,7 @@ def enumerate_devices() -> list[dict]:
                 {
                     "id": str(i),
                     "name": d["name"],
-                    "host_api": sd.query_host_api_info(d["hostapi"])["name"],
+                    "host_api": sd.query_hostapis(d["hostapi"])["name"],
                     "max_input_channels": d["max_input_channels"],
                     "default_sample_rate": d["default_samplerate"],
                 }
