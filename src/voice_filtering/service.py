@@ -36,7 +36,7 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
     scheduler = ASRScheduler(transcriber, hub.publish_transcript)
     controller = PipelineControllerImpl(
         source=source, resampler=resampler, transcriber=transcriber,
-        scheduler=scheduler, on_event=hub.publish_transcript,
+        scheduler=scheduler, on_event=hub.publish_transcript, on_level=hub.publish_level,
     )
 
     async def get_state(request: Request) -> JSONResponse:

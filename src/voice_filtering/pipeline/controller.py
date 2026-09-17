@@ -19,6 +19,7 @@ class PipelineControllerImpl:
         transcriber: WhisperASR,
         scheduler: ASRScheduler,
         on_event: Callable[[dict], None],
+        on_level: Callable[[float, float, str, int], None] = lambda r,p,s,e: None,
         clock=time.monotonic,
     ) -> None:
         self._source = source
@@ -26,6 +27,7 @@ class PipelineControllerImpl:
         self._transcriber = transcriber
         self._scheduler = scheduler
         self._on_event = on_event
+        self._on_level = on_level
         self._clock = clock
         self._state: str = "idle"
         self._session_id: str = ""
@@ -175,10 +177,22 @@ class PipelineControllerImpl:
                 self._transcript = self._transcript[-1000:]
 
     def _capture_loop(self) -> None:
+        import numpy as np
         while not self._capture_stop_event.is_set():
             frame = self._source.read_frame(timeout_s=0.1)
             if frame is None:
                 continue
+            
+            # Compute level on raw frame
+            pcm = frame.pcm[:frame.valid_samples]
+            if len(pcm) > 0:
+                rms = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2)))
+                if rms > 0:
+                    dbfs = 20.0 * np.log10(rms)
+                else:
+                    dbfs = -100.0
+                self._on_level(dbfs, dbfs, self._session_id, self._epoch)
+
             resampled = self._resampler.push(frame)
             for rframe in resampled:
                 self._scheduler.push_audio(rframe)
