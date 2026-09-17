@@ -44,7 +44,7 @@ Human gates require actual user feedback; automated tests never count as the use
 - M0 implementation task `task_4ab0a7f16863` completed in its child worktree. Its implementer owns the code; coordinator does not program. Independent review remains a gate before integration.
 - M1 is represented by task `task_64f8c2de368e`, blocked by human gate `gate_150349ca6493`. Do not resolve without user feedback or explicit waiver.
 - Antigravity CLI was discovered as `agy`; `agy models` confirms `gemini-3.1-pro-high`. Architecture risk review is now assigned through Orca to Antigravity Pro in its own child worktree (details below).
-- Next: Independent M0 review task dispatched in child worktree. Waiting for review verdicts before integration.
+- Next: Present H0 commands to the user and wait for human feedback. Only then unblock and delegate M1 in another child worktree.
 
 ## Completed preparation
 
@@ -65,13 +65,13 @@ Human gates require actual user feedback; automated tests never count as the use
 - The worker reports 66 automated tests passing (audio 8, ASR 21, pipeline 20, service 17), `pip check` clean, and successful local model download/load/decode using faster-whisper-tiny.en int8 CPU. These results are worker-reported and still need independent review.
 - The real JFK speech fixture could not be fetched because its external CDN was blocked. A synthetic WAV verified model load/decode and produced text, so real speech accuracy and microphone behavior remain unverified. The worker explicitly leaves H0 pending.
 - M0 UI behavior reported: real PortAudio device enumeration, input RMS meter, Idle/Listening/Processing/Error states, partial/final transcript grouping, Copy/Clear, permission notice, and optional `--dev-recording`. RNNoise, Hush, and Combined are visibly unavailable and return `STAGE_UNAVAILABLE`; no filter implementation has been claimed.
-- Independent M0 review task `task_8510b5dc7853` is currently dispatched in a new Orca child worktree (`voice-m0-review`). Waiting for specification-compliance and code/test-quality verdicts. Route any fixes back to the M0 implementer and re-review.
+- Independent M0 review task `task_8510b5dc7853` completed in Orca child worktree `voice-m0-review`. Verdicts: PRD/specification compliance PASS, code quality/tests/error handling PASS. Report saved to `docs/handoffs/m0-review.md`. M0 baseline has been successfully integrated into main.
 - H0 gate `gate_150349ca6493` remains unresolved and M1 task `task_64f8c2de368e` remains blocked. After review, give the user the commands and short script in `docs/checkpoints/H0-baseline.md`; record actual device, permission, transcript, latency, stop/restart, Copy/Clear and error feedback before resolving H0.
 - No product acceptance test T1–T6, latency target, real noise-only behavior, or real RNNoise/Hush inference has passed. Antigravity’s architecture review is `3a2a0eb` and is PASS WITH CONDITIONS, specifically requiring measured noise-only behavior and short/full-window ASR timings.
 
 ## Live coordination state at handoff
 
-- Completed and integrated: architecture/contracts (`dace574`), acceptance/checkpoint plan (`70e726a`), architecture review (`3a2a0eb`), acceptance reconciliation (`18a0257`, `bd88e00`).
+- Completed and integrated: architecture/contracts (`dace574`), acceptance/checkpoint plan (`70e726a`), architecture review (`3a2a0eb`), acceptance reconciliation (`18a0257`, `bd88e00`), M0 baseline implementation and review.
 - Completed child workers retained externally by Orca: M0 implementation, Antigravity architecture review, and the older acceptance worker. The first acceptance dispatch `ctx_6819e53540a5` was abandoned after a startup update dialog and must not be treated as evidence.
 - No agent is authorized to start new work in the main worktree. Every new worker, including the pending M0 reviewer, must use an Orca child worktree under this main worktree. Do not reuse the two legacy main-worktree workers for implementation.
-- Astra resume sequence: (1) inspect `b5e48d5` and `docs/handoffs/m0-baseline.md`; (2) dispatch `task_8510b5dc7853` from the exact M0 commit in a child worktree; (3) resolve/re-review findings; (4) integrate reviewed M0; (5) run the H0 human checkpoint and wait for feedback; (6) only then unblock and delegate M1 in another child worktree. Keep this ledger current after each gate.
+- Astra resume sequence: (1) run the H0 human checkpoint and wait for feedback; (2) only then unblock and delegate M1 in another child worktree. Keep this ledger current after each gate.
