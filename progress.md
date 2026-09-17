@@ -44,7 +44,7 @@ Human gates require actual user feedback; automated tests never count as the use
 - M0 implementation task `task_4ab0a7f16863` completed in its child worktree. Its implementer owns the code; coordinator does not program. Independent review remains a gate before integration.
 - M1 is represented by task `task_64f8c2de368e`, blocked by human gate `gate_150349ca6493`. Do not resolve without user feedback or explicit waiver.
 - Antigravity CLI was discovered as `agy`; `agy models` confirms `gemini-3.1-pro-high`. Architecture risk review is now assigned through Orca to Antigravity Pro in its own child worktree (details below).
-- Next: dispatch the already-created independent M0 review task after preparing the exact implementation diff, then integrate only after both review verdicts pass and present H0 to the user.
+- Next: Independent M0 review task dispatched in child worktree. Waiting for review verdicts before integration.
 
 ## Completed preparation
 
@@ -65,7 +65,7 @@ Human gates require actual user feedback; automated tests never count as the use
 - The worker reports 66 automated tests passing (audio 8, ASR 21, pipeline 20, service 17), `pip check` clean, and successful local model download/load/decode using faster-whisper-tiny.en int8 CPU. These results are worker-reported and still need independent review.
 - The real JFK speech fixture could not be fetched because its external CDN was blocked. A synthetic WAV verified model load/decode and produced text, so real speech accuracy and microphone behavior remain unverified. The worker explicitly leaves H0 pending.
 - M0 UI behavior reported: real PortAudio device enumeration, input RMS meter, Idle/Listening/Processing/Error states, partial/final transcript grouping, Copy/Clear, permission notice, and optional `--dev-recording`. RNNoise, Hush, and Combined are visibly unavailable and return `STAGE_UNAVAILABLE`; no filter implementation has been claimed.
-- Independent M0 review task `task_8510b5dc7853` is ready but has not been dispatched. It must review the exact `dace574..b5e48d5` implementation in a new Orca child worktree under this main worktree, with separate specification-compliance and code/test-quality verdicts. Route any fixes back to the M0 implementer and re-review.
+- Independent M0 review task `task_8510b5dc7853` is currently dispatched in a new Orca child worktree (`voice-m0-review`). Waiting for specification-compliance and code/test-quality verdicts. Route any fixes back to the M0 implementer and re-review.
 - H0 gate `gate_150349ca6493` remains unresolved and M1 task `task_64f8c2de368e` remains blocked. After review, give the user the commands and short script in `docs/checkpoints/H0-baseline.md`; record actual device, permission, transcript, latency, stop/restart, Copy/Clear and error feedback before resolving H0.
 - No product acceptance test T1–T6, latency target, real noise-only behavior, or real RNNoise/Hush inference has passed. Antigravity’s architecture review is `3a2a0eb` and is PASS WITH CONDITIONS, specifically requiring measured noise-only behavior and short/full-window ASR timings.
 
