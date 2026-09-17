@@ -64,6 +64,7 @@ class PipelineControllerImpl:
             self._running = True
         try:
             self._source.start(device_id=device_id, session_id=self._session_id)
+            self._resampler.reset()
             self._scheduler.start(self._session_id, self._epoch)
             with self._lock:
                 self._state = "listening"
