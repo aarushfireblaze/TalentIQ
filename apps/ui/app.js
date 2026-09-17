@@ -127,7 +127,8 @@
         statusEl.textContent = state.charAt(0).toUpperCase() + state.slice(1);
         statusEl.className = 'status ' + state;
         updateButtons();
-        permissionNotice.style.display = (state === 'idle') ? 'block' : 'none';
+        // permissionNotice.style.display = (state === 'idle') ? 'block' : 'none';
+        permissionNotice.style.display = 'none';
     }
 
     function updateButtons() {
