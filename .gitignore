@@ -1,0 +1,14 @@
+.venv/
+.cache/
+models/
+artifacts/
+tests/fixtures/generated/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
