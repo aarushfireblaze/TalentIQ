@@ -36,12 +36,13 @@ class TranscriptEvent:
     final_reason: str | None = None
 
 
-@dataclass(frozen=True)
-class PipelineError:
-    code: str
-    stage: str
-    message: str
-    recoverable: bool
+class PipelineError(Exception):
+    def __init__(self, code: str, stage: str, message: str, recoverable: bool):
+        super().__init__(message)
+        self.code = code
+        self.stage = stage
+        self.message = message
+        self.recoverable = recoverable
 
 
 class StageStatus(enum.Enum):
