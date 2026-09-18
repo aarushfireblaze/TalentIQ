@@ -133,6 +133,9 @@ class TestRNNoiseProcessorLoadFailure(unittest.TestCase):
 
     def test_process_raises_when_not_loaded(self):
         proc = RNNoiseProcessor()
+        proc._loaded = False
+        proc._state = None
+        proc._load_error = "simulated"
         frame = make_48k_frame()
         with self.assertRaises(RuntimeError):
             proc.process(frame)
