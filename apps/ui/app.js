@@ -4,6 +4,7 @@
     let eventSource = null;
     let currentState = 'idle';
     let currentSessionId = '';
+    let currentMode = 'raw';
     let transcript = [];
     let devices = [];
 
@@ -19,6 +20,12 @@
     const asrStatusEl = document.getElementById('asrStatus');
     const errorBanner = document.getElementById('errorBanner');
     const permissionNotice = document.getElementById('permissionNotice');
+    const rnnoiseRadio = document.getElementById('rnnoiseRadio');
+    const rnnoiseLabel = document.getElementById('rnnoiseLabel');
+    const rnnoiseStatusEl = document.getElementById('rnnoiseStatus');
+    const rnnoiseInfoEl = document.getElementById('rnnoiseInfo');
+    const rnnoiseMetricsEl = document.getElementById('rnnoiseMetrics');
+    const metricsSection = document.getElementById('metricsSection');
 
     function init() {
         fetchDevices();
@@ -106,13 +113,51 @@
     function applySnapshot(snap) {
         updateStatus(snap.state);
         currentSessionId = snap.session_id || '';
+        currentMode = snap.mode || 'raw';
 
         if (snap.stages) {
             if (snap.stages.asr) {
                 asrStatusEl.textContent = snap.stages.asr.status;
                 asrStatusEl.className = snap.stages.asr.status === 'ready' || snap.stages.asr.status === 'active' ? '' : 'unavailable';
             }
+            if (snap.stages.rnnoise) {
+                const rn = snap.stages.rnnoise;
+                rnnoiseInfoEl.textContent = rn.status;
+                rnnoiseInfoEl.className = (rn.status === 'ready' || rn.status === 'active') ? '' : 'unavailable';
+
+                if (rn.status === 'ready' || rn.status === 'active') {
+                    rnnoiseRadio.disabled = false;
+                    rnnoiseLabel.classList.remove('disabled');
+                    rnnoiseLabel.classList.add('active');
+                    rnnoiseStatusEl.textContent = rn.status === 'active' ? 'Active' : 'Ready';
+                    rnnoiseStatusEl.className = 'mode-status ' + (currentMode === 'rnnoise' ? 'active' : '');
+                } else if (rn.status === 'failed') {
+                    rnnoiseRadio.disabled = true;
+                    rnnoiseLabel.classList.add('disabled');
+                    rnnoiseLabel.classList.remove('active');
+                    rnnoiseStatusEl.textContent = 'Failed: ' + (rn.reason || 'unknown');
+                    rnnoiseStatusEl.className = 'mode-status unavailable';
+                } else {
+                    rnnoiseRadio.disabled = true;
+                    rnnoiseLabel.classList.add('disabled');
+                    rnnoiseLabel.classList.remove('active');
+                    rnnoiseStatusEl.textContent = rn.reason || 'Unavailable';
+                    rnnoiseStatusEl.className = 'mode-status unavailable';
+                }
+            }
         }
+
+        if (snap.metrics) {
+            const m = snap.metrics;
+            if (m.rnnoise_avg_ms != null) {
+                metricsSection.style.display = '';
+                rnnoiseMetricsEl.textContent = 'avg=' + m.rnnoise_avg_ms.toFixed(2) + 'ms p95=' + (m.rnnoise_p95_ms != null ? m.rnnoise_p95_ms.toFixed(2) : '--') + 'ms frames=' + (m.rnnoise_total_frames || 0);
+            }
+        }
+
+        document.querySelectorAll('input[name="mode"]').forEach(r => {
+            if (r.value === currentMode) r.checked = true;
+        });
 
         if (snap.transcript) {
             transcript = snap.transcript;
@@ -127,7 +172,6 @@
         statusEl.textContent = state.charAt(0).toUpperCase() + state.slice(1);
         statusEl.className = 'status ' + state;
         updateButtons();
-        // permissionNotice.style.display = (state === 'idle') ? 'block' : 'none';
         permissionNotice.style.display = 'none';
     }
 
@@ -187,7 +231,8 @@
             entries.forEach(entry => {
                 const cls = entry.kind === 'partial' ? 'partial' : 'final';
                 const text = escapeHtml(entry.text);
-                html += `<div class="transcript-entry ${cls}">${text}</div>`;
+                const modeTag = entry.mode && entry.mode !== 'raw' ? ' [' + entry.mode + ']' : '';
+                html += '<div class="transcript-entry ' + cls + '">' + text + '<span class="mode-tag">' + modeTag + '</span></div>';
             });
             html += '</div>';
         }
@@ -204,6 +249,7 @@
     async function handleStart() {
         hideError();
         const deviceId = deviceSelect.value || '0';
+        const mode = currentMode || 'raw';
         try {
             const resp = await fetch('/api/start', {
                 method: 'POST',
@@ -213,7 +259,7 @@
                 },
                 body: JSON.stringify({
                     device_id: deviceId,
-                    mode: 'raw',
+                    mode: mode,
                     record: false
                 })
             });
@@ -295,6 +341,7 @@
 
     async function handleModeChange(e) {
         const mode = e.target.value;
+        currentMode = mode;
         try {
             const resp = await fetch('/api/mode', {
                 method: 'POST',
@@ -308,6 +355,8 @@
             if (data.error) {
                 showError(data.error.message);
                 e.target.checked = false;
+                currentMode = 'raw';
+                document.querySelector('input[name="mode"][value="raw"]').checked = true;
             }
         } catch (e) {
             showError('Failed to switch mode: ' + e.message);

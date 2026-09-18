@@ -190,9 +190,9 @@ class TestServiceState(unittest.TestCase):
     def test_stages_unavailable(self):
         resp = self.client.get("/api/state")
         data = resp.json()
-        self.assertEqual(data["stages"]["rnnoise"]["status"], "unavailable")
+        self.assertIn(data["stages"]["rnnoise"]["status"], ("unavailable", "failed"))
         self.assertEqual(data["stages"]["hush"]["status"], "unavailable")
-        self.assertIn("Not implemented in M0", data["stages"]["rnnoise"]["reason"])
+        self.assertIn("Not implemented in M1", data["stages"]["hush"]["reason"])
 
     def test_mode_raw_accepted(self):
         resp = self.client.post("/api/mode", json={"mode": "raw"})

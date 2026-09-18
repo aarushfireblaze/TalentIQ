@@ -13,10 +13,10 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, HTMLResponse, PlainTextResponse
 from starlette.routing import Route
-from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from voice_filtering.audio.capture import CaptureSource, enumerate_devices, get_default_device_id
 from voice_filtering.audio.resample import StreamingResampler
+from voice_filtering.audio.rnnoise import RNNoiseProcessor
 from voice_filtering.asr.whisper import WhisperASR, ASRScheduler
 from voice_filtering.pipeline.controller import PipelineControllerImpl
 from voice_filtering.events import EventHub
@@ -25,8 +25,12 @@ from voice_filtering.events import EventHub
 def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_recording: bool = False) -> Starlette:
     source = CaptureSource()
     resampler = StreamingResampler()
+    rnnoise = RNNoiseProcessor()
     transcriber = WhisperASR(model_path)
     hub = EventHub()
+
+    if not rnnoise.is_loaded:
+        hub.publish_error("STAGE_UNAVAILABLE", "rnnoise", rnnoise.load_error or "RNNoise unavailable", recoverable=True)
 
     try:
         transcriber.load()
@@ -37,6 +41,7 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
     controller = PipelineControllerImpl(
         source=source, resampler=resampler, transcriber=transcriber,
         scheduler=scheduler, on_event=hub.publish_transcript, on_level=hub.publish_level,
+        rnnoise=rnnoise,
     )
 
     async def get_state(request: Request) -> JSONResponse:
@@ -60,7 +65,7 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
         record = body.get("record", False)
         result = controller.start(device_id, mode, record)
         if "error" in result:
-            status = 409 if result["error"]["code"] in ("INVALID_STATE", "STAGE_UNAVAILABLE") else 422
+            status = 409 if result["error"]["code"] in ("INVALID_STATE", "STAGE_UNAVAILABLE", "INVALID_MODE") else 422
             return JSONResponse(result, status_code=status)
         hub.publish_state("listening", controller._session_id, controller._epoch)
         return JSONResponse(result, status_code=202)
@@ -88,6 +93,7 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
         return JSONResponse(result)
 
     async def get_events(request: Request) -> StreamingResponse:
+        from starlette.responses import StreamingResponse
         client_id = str(uuid.uuid4())
         buf = hub.subscribe(client_id)
 
@@ -110,7 +116,7 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
         ui_path = Path(__file__).parent.parent.parent / "apps" / "ui" / "index.html"
         if ui_path.exists():
             return HTMLResponse(ui_path.read_text())
-        return HTMLResponse("<h1>Voice Filtering M0</h1><p>UI not found</p>")
+        return HTMLResponse("<h1>Voice Filtering</h1><p>UI not found</p>")
 
     async def static_css(request: Request) -> PlainTextResponse:
         css_path = Path(__file__).parent.parent.parent / "apps" / "ui" / "styles.css"
@@ -123,8 +129,6 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
         if js_path.exists():
             return PlainTextResponse(js_path.read_text(), media_type="application/javascript")
         return PlainTextResponse("", media_type="application/javascript")
-
-    from starlette.responses import StreamingResponse
 
     routes = [
         Route("/api/state", get_state, methods=["GET"]),

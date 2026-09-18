@@ -317,3 +317,10 @@ button:disabled {
     font-size: 14px;
     color: #fc8181;
 }
+
+.mode-tag {
+    font-size: 10px;
+    color: #718096;
+    margin-left: 6px;
+    font-style: normal;
+}

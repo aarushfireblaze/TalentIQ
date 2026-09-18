@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Filtering M0 Baseline</title>
+    <title>Voice Filtering</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Voice Filtering M0 Baseline</h1>
+            <h1>Voice Filtering</h1>
             <div id="status" class="status idle">Idle</div>
         </header>
 
@@ -40,20 +40,20 @@
                     <span>Raw</span>
                     <span class="mode-status active">Active</span>
                 </label>
-                <label class="mode-label disabled">
-                    <input type="radio" name="mode" value="rnnoise" disabled>
+                <label class="mode-label" id="rnnoiseLabel">
+                    <input type="radio" name="mode" value="rnnoise" id="rnnoiseRadio">
                     <span>RNNoise</span>
-                    <span class="mode-status unavailable">Not implemented in M0</span>
+                    <span class="mode-status" id="rnnoiseStatus">Checking...</span>
                 </label>
                 <label class="mode-label disabled">
                     <input type="radio" name="mode" value="hush" disabled>
                     <span>Hush</span>
-                    <span class="mode-status unavailable">Not implemented in M0</span>
+                    <span class="mode-status unavailable">Not implemented in M1</span>
                 </label>
                 <label class="mode-label disabled">
                     <input type="radio" name="mode" value="combined" disabled>
                     <span>Combined</span>
-                    <span class="mode-status unavailable">Not implemented in M0</span>
+                    <span class="mode-status unavailable">Not implemented in M1</span>
                 </label>
             </div>
         </div>
@@ -84,11 +84,15 @@
                 </div>
                 <div class="info-item">
                     <label>RNNoise:</label>
-                    <span class="unavailable">Not implemented in M0</span>
+                    <span id="rnnoiseInfo">Checking...</span>
                 </div>
                 <div class="info-item">
                     <label>Hush:</label>
-                    <span class="unavailable">Not implemented in M0</span>
+                    <span class="unavailable">Not implemented in M1</span>
+                </div>
+                <div class="info-item" id="metricsSection" style="display:none;">
+                    <label>RNNoise Timing:</label>
+                    <span id="rnnoiseMetrics">--</span>
                 </div>
             </div>
         </div>
