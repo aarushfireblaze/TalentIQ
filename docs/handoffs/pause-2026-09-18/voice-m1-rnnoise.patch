@@ -1,0 +1,177 @@
+diff --git a/apps/ui/app.js b/apps/ui/app.js
+index e801b43..2d8fddc 100644
+--- a/apps/ui/app.js
++++ b/apps/ui/app.js
+@@ -8,6 +8,8 @@
+     let lastConfirmedMode = 'raw';
+     let transcript = [];
+     let devices = [];
++    let _pendingPollTimer = null;
++    let _pendingPollGeneration = 0;
+ 
+     const statusEl = document.getElementById('status');
+     const deviceSelect = document.getElementById('device');
+@@ -191,6 +193,9 @@
+         updateButtons();
+         updateModeSelection();
+         permissionNotice.style.display = 'none';
++        if (state !== 'listening') {
++            stopPendingPoll();
++        }
+     }
+ 
+     function updateButtons() {
+@@ -301,6 +306,7 @@
+ 
+     async function handleStart() {
+         hideError();
++        stopPendingPoll();
+         const deviceId = deviceSelect.value || '0';
+         const mode = currentMode || 'raw';
+         try {
+@@ -330,6 +336,7 @@
+     }
+ 
+     async function handleStop() {
++        stopPendingPoll();
+         try {
+             const resp = await fetch('/api/stop', {
+                 method: 'POST',
+@@ -409,7 +416,6 @@
+             const data = await resp.json();
+             if (data.error) {
+                 showError(data.error.message);
+-                e.target.checked = false;
+                 currentMode = lastConfirmedMode;
+                 document.querySelectorAll('input[name="mode"]').forEach(r => {
+                     if (r.value === currentMode) r.checked = true;
+@@ -417,9 +423,70 @@
+                 updateModeSelection();
+             } else {
+                 applySnapshot(data);
++                if (data.pending_mode) {
++                    startPendingPoll();
++                }
+             }
+-        } catch (e) {
+-            showError('Failed to switch mode: ' + e.message);
++        } catch (err) {
++            showError('Failed to switch mode: ' + err.message);
++            currentMode = lastConfirmedMode;
++            document.querySelectorAll('input[name="mode"]').forEach(r => {
++                if (r.value === currentMode) r.checked = true;
++            });
++            updateModeSelection();
++        }
++    }
++
++    function startPendingPoll() {
++        stopPendingPoll();
++        var gen = ++_pendingPollGeneration;
++        var attempts = 0;
++        var maxAttempts = 30;
++        var intervalMs = 300;
++        function poll() {
++            if (gen !== _pendingPollGeneration) return;
++            if (attempts >= maxAttempts || currentState !== 'listening') {
++                currentMode = lastConfirmedMode;
++                document.querySelectorAll('input[name="mode"]').forEach(r => {
++                    if (r.value === currentMode) r.checked = true;
++                });
++                updateModeSelection();
++                return;
++            }
++            attempts++;
++            fetch('/api/state')
++                .then(function(resp) { return resp.json(); })
++                .then(function(snap) {
++                    if (gen !== _pendingPollGeneration) return;
++                    applySnapshot(snap);
++                    if (snap.pending_mode && currentState === 'listening') {
++                        _pendingPollTimer = setTimeout(poll, intervalMs);
++                    } else {
++                        lastConfirmedMode = snap.mode || lastConfirmedMode;
++                        currentMode = lastConfirmedMode;
++                        document.querySelectorAll('input[name="mode"]').forEach(r => {
++                            if (r.value === currentMode) r.checked = true;
++                        });
++                        updateModeSelection();
++                    }
++                })
++                .catch(function() {
++                    if (gen !== _pendingPollGeneration) return;
++                    currentMode = lastConfirmedMode;
++                    document.querySelectorAll('input[name="mode"]').forEach(r => {
++                        if (r.value === currentMode) r.checked = true;
++                    });
++                    updateModeSelection();
++                });
++        }
++        poll();
++    }
++
++    function stopPendingPoll() {
++        _pendingPollGeneration++;
++        if (_pendingPollTimer) {
++            clearTimeout(_pendingPollTimer);
++            _pendingPollTimer = null;
+         }
+     }
+ 
+diff --git a/src/voice_filtering/pipeline/controller.py b/src/voice_filtering/pipeline/controller.py
+index 576cd97..57fbf53 100644
+--- a/src/voice_filtering/pipeline/controller.py
++++ b/src/voice_filtering/pipeline/controller.py
+@@ -137,7 +137,10 @@ class PipelineControllerImpl:
+         """Called from capture loop at a frame boundary to apply pending mode."""
+         with self._lock:
+             pending = self._pending_mode
+-            if pending is None or pending == self._mode:
++            if pending is None:
++                return
++            if pending == self._mode:
++                self._pending_mode = None
+                 return
+             self._pending_mode = None
+             self._mode = pending
+diff --git a/tests/test_rnnoise.py b/tests/test_rnnoise.py
+index 987ed62..254149c 100644
+--- a/tests/test_rnnoise.py
++++ b/tests/test_rnnoise.py
+@@ -350,6 +350,36 @@ class TestPipelineRNNoiseMode(unittest.TestCase):
+         self.assertEqual(snap["state"], "error")
+         self.assertEqual(snap["last_error"]["code"], "STAGE_FAILED")
+ 
++    def test_reselect_same_mode_clears_pending(self):
++        ctrl = self._make_controller(self.rnnoise)
++        ctrl.start("0", "raw", False)
++        time.sleep(0.05)
++        ctrl.switch_mode("raw")
++        snap = ctrl.snapshot()
++        self.assertEqual(snap["pending_mode"], "raw")
++        ctrl._apply_mode_switch()
++        snap2 = ctrl.snapshot()
++        self.assertIsNone(snap2["pending_mode"])
++        self.assertEqual(snap2["mode"], "raw")
++        self.assertEqual(snap2["epoch"], 0)
++        ctrl.stop()
++
++    def test_cancel_queued_switch_selects_current(self):
++        ctrl = self._make_controller(self.rnnoise)
++        ctrl.start("0", "raw", False)
++        time.sleep(0.05)
++        ctrl.switch_mode("rnnoise")
++        snap1 = ctrl.snapshot()
++        self.assertEqual(snap1["pending_mode"], "rnnoise")
++        ctrl.switch_mode("raw")
++        snap2 = ctrl.snapshot()
++        self.assertEqual(snap2["pending_mode"], "raw")
++        ctrl._apply_mode_switch()
++        snap3 = ctrl.snapshot()
++        self.assertEqual(snap3["mode"], "raw")
++        self.assertEqual(snap3["epoch"], 0)
++        ctrl.stop()
++
+     def test_clear_rejected_while_listening(self):
+         ctrl = self._make_controller(self.rnnoise)
+         ctrl.start("0", "raw", False)

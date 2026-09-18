@@ -1,0 +1,442 @@
+diff --git a/src/voice_filtering/asr/whisper.py b/src/voice_filtering/asr/whisper.py
+index af63c48..a0500c1 100644
+--- a/src/voice_filtering/asr/whisper.py
++++ b/src/voice_filtering/asr/whisper.py
+@@ -119,9 +119,8 @@ class ASRScheduler:
+             self._final_queue.clear()
+             self._drop_count = 0
+             self._partial_count = 0
+-            self._decode_session_id = session_id
+-            self._decode_epoch = epoch
+-            self._decode_mode = mode
++            self._speech_start_ns = 0
++            self._utterance_start_ms = 0.0
+ 
+     def push_audio(self, frame: AudioFrame) -> None:
+         if not self._running:
+@@ -156,19 +155,51 @@ class ASRScheduler:
+         self.finish()
+ 
+     def _flush_utterance(self) -> None:
++        task = None
+         with self._lock:
+-            buf = list(self._utterance_buf)
+-            self._utterance_buf.clear()
+-            self._utterance_samples = 0
+-            self._in_speech = False
+-            ctx_session = self._decode_session_id
+-            ctx_epoch = self._decode_epoch
+-            ctx_mode = self._decode_mode
++            task = self._extract_utterance_locked("stop")
++        if task:
++            self._decode_and_publish(*task)
++
++    def _extract_utterance_locked(self, reason: str) -> tuple | None:
++        buf = list(self._utterance_buf)
++        self._utterance_buf.clear()
++        self._utterance_samples = 0
++        self._in_speech = False
++
+         if not buf:
+-            return
+-        pcm = self._concat_utterance(buf)
++            return None
++
++        parts = [f.pcm[: f.valid_samples] for f in buf]
++        pcm = np.concatenate(parts) if parts else np.array([], dtype=np.float32)
++        
+         if len(pcm) == 0:
+-            return
++            return None
++
++        # Capture the original context active during this utterance
++        # We rely on the fact that if a reset happened, it would clear utterance_buf,
++        # so if we have frames here, they belong to the current session/epoch.
++        # Wait, what if the frames were appended *after* a reset by a concurrent run_step?
++        # run_step will now filter by session/epoch before appending, so this is safe.
++        ctx_session = self._session_id
++        ctx_epoch = self._epoch
++        ctx_mode = self._mode
++        start_ms = self._utterance_start_ms
++        num_frames = len(buf)
++        
++        return (pcm, ctx_session, ctx_epoch, ctx_mode, start_ms, num_frames, reason)
++
++    def _decode_and_publish(
++        self,
++        pcm: np.ndarray,
++        ctx_session: str,
++        ctx_epoch: int,
++        ctx_mode: str,
++        start_ms: float,
++        num_frames: int,
++        reason: str
++    ) -> None:
++        # Decode outside lock
+         try:
+             text = self._transcriber.decode(pcm)
+         except Exception as e:
+@@ -176,19 +207,25 @@ class ASRScheduler:
+             import traceback
+             traceback.print_exc()
+             return
++            
++        # Callback acceptance boundary/deadlock safety:
++        # We acquire the lock to validate provenance and queue the event.
++        # We invoke the external callback OUTSIDE the lock to prevent deadlocks
++        # if the callback triggers synchronous controller interactions.
++        event = None
+         with self._lock:
+             if self._epoch != ctx_epoch or self._session_id != ctx_session:
+                 print(f'ASR stale decode rejected: ctx_epoch={ctx_epoch} current_epoch={self._epoch}')
+                 return
+-        if not text.strip():
+-            print('ASR empty text')
+-            return
+-        print('ASR text:', text)
+-        with self._lock:
++            if not text.strip():
++                print('ASR empty text')
++                return
++
++            print('ASR text:', text)
+             self._segment_counter += 1
+             seg_id = str(uuid.uuid4())
+-            start_ms = self._utterance_start_ms
+-            end_ms = start_ms + len(buf) * 10.0
++            end_ms = start_ms + num_frames * 10.0
++            
+             event = TranscriptEvent(
+                 session_id=ctx_session,
+                 segment_id=seg_id,
+@@ -199,14 +236,12 @@ class ASRScheduler:
+                 end_ms=end_ms,
+                 mode=ctx_mode,
+                 epoch=ctx_epoch,
+-                final_reason="stop",
++                final_reason=reason,
+             )
+             self._final_queue.append(event)
+-        self._on_event(event)
+-
+-    def _concat_utterance(self, frames: list[AudioFrame]) -> np.ndarray:
+-        parts = [f.pcm[: f.valid_samples] for f in frames]
+-        return np.concatenate(parts) if parts else np.array([], dtype=np.float32)
++            
++        if event:
++            self._on_event(event)
+ 
+     def _rms_dbfs(self, pcm: np.ndarray) -> float:
+         if len(pcm) == 0:
+@@ -221,84 +256,46 @@ class ASRScheduler:
+         with self._lock:
+             while self._ingress:
+                 frames.append(self._ingress.popleft())
++                
+         if not frames:
+             return False
+-        for frame in frames:
+-            rms = self._rms_dbfs(frame.pcm[: frame.valid_samples])
+-            if rms > -45.0:
+-                if not self._in_speech:
+-                    self._in_speech = True
+-                    self._speech_start_ns = frame.captured_ns
+-                    self._utterance_start_ms = frame.sample_start * 1000.0 / 48000.0
+-                    self._utterance_buf.clear()
+-                    self._utterance_samples = 0
+-                    with self._lock:
+-                        self._decode_session_id = self._session_id
+-                        self._decode_epoch = self._epoch
+-                        self._decode_mode = self._mode
+-                self._utterance_buf.append(frame)
+-                self._utterance_samples += frame.valid_samples
+-                duration_s = self._utterance_samples / 16000.0
+-                if duration_s >= UTTERANCE_MAX_S:
+-                    self._finalize_utterance("max_duration")
+-            else:
+-                if self._in_speech:
++            
++        decode_tasks = []
++        with self._lock:
++            for frame in frames:
++                if frame.session_id != self._session_id or frame.epoch != self._epoch:
++                    continue
++                    
++                rms = self._rms_dbfs(frame.pcm[: frame.valid_samples])
++                if rms > -45.0:
++                    if not self._in_speech:
++                        self._in_speech = True
++                        self._speech_start_ns = frame.captured_ns
++                        self._utterance_start_ms = frame.sample_start * 1000.0 / 48000.0
++                        self._utterance_buf.clear()
++                        self._utterance_samples = 0
+                     self._utterance_buf.append(frame)
+                     self._utterance_samples += frame.valid_samples
+                     duration_s = self._utterance_samples / 16000.0
+-                    if duration_s >= 0.6:
+-                        self._finalize_utterance("silence")
++                    if duration_s >= UTTERANCE_MAX_S:
++                        task = self._extract_utterance_locked("max_duration")
++                        if task:
++                            decode_tasks.append(task)
++                else:
++                    if self._in_speech:
++                        self._utterance_buf.append(frame)
++                        self._utterance_samples += frame.valid_samples
++                        duration_s = self._utterance_samples / 16000.0
++                        if duration_s >= 0.6:
++                            task = self._extract_utterance_locked("silence")
++                            if task:
++                                decode_tasks.append(task)
++                                
++        for task in decode_tasks:
++            self._decode_and_publish(*task)
++            
+         return True
+ 
+-    def _finalize_utterance(self, reason: str) -> None:
+-        buf = list(self._utterance_buf)
+-        self._utterance_buf.clear()
+-        self._utterance_samples = 0
+-        self._in_speech = False
+-        if not buf:
+-            return
+-        pcm = self._concat_utterance(buf)
+-        if len(pcm) == 0:
+-            return
+-        with self._lock:
+-            ctx_session = self._decode_session_id
+-            ctx_epoch = self._decode_epoch
+-            ctx_mode = self._decode_mode
+-        try:
+-            text = self._transcriber.decode(pcm)
+-        except Exception as e:
+-            print('ASR Decode Error:', e)
+-            import traceback
+-            traceback.print_exc()
+-            return
+-        with self._lock:
+-            if self._epoch != ctx_epoch or self._session_id != ctx_session:
+-                print(f'ASR stale decode rejected: ctx_epoch={ctx_epoch} current_epoch={self._epoch}')
+-                return
+-        if not text.strip():
+-            print('ASR empty text')
+-            return
+-        print('ASR text:', text)
+-        with self._lock:
+-            self._segment_counter += 1
+-            seg_id = str(uuid.uuid4())
+-            start_ms = self._utterance_start_ms
+-            end_ms = start_ms + len(buf) * 10.0
+-            event = TranscriptEvent(
+-                session_id=ctx_session,
+-                segment_id=seg_id,
+-                revision=1,
+-                kind="final",
+-                text=text,
+-                start_ms=start_ms,
+-                end_ms=end_ms,
+-                mode=ctx_mode,
+-                epoch=ctx_epoch,
+-                final_reason=reason,
+-            )
+-            self._final_queue.append(event)
+-        self._on_event(event)
+-
+     def get_ingress_drop_count(self) -> int:
+         with self._lock:
+             return self._drop_count
+diff --git a/tests/test_asr.py b/tests/test_asr.py
+index 576e312..1c1fad8 100644
+--- a/tests/test_asr.py
++++ b/tests/test_asr.py
+@@ -87,7 +87,8 @@ class TestASRScheduler(unittest.TestCase):
+             self.scheduler.push_audio(frame)
+         self.scheduler._running = True
+         self.scheduler.run_step()
+-        self.scheduler._finalize_utterance("silence")
++        task = self.scheduler._extract_utterance_locked("silence")
++        if task: self.scheduler._decode_and_publish(*task)
+         finals = [e for e in self.events if e.kind == "final"]
+         self.assertEqual(len(finals), 1)
+         self.assertEqual(finals[0].text, "hello world")
+@@ -99,7 +100,8 @@ class TestASRScheduler(unittest.TestCase):
+         self.scheduler.push_audio(frame)
+         self.scheduler._running = True
+         self.scheduler.run_step()
+-        self.scheduler._finalize_utterance("silence")
++        task = self.scheduler._extract_utterance_locked("silence")
++        if task: self.scheduler._decode_and_publish(*task)
+         self.assertGreater(len(self.events), 0)
+ 
+     def test_stop_before_speech(self):
+@@ -122,7 +124,8 @@ class TestASRScheduler(unittest.TestCase):
+             self.scheduler.push_audio(frame)
+         self.scheduler._running = True
+         self.scheduler.run_step()
+-        self.scheduler._finalize_utterance("max_duration")
++        task = self.scheduler._extract_utterance_locked("max_duration")
++        if task: self.scheduler._decode_and_publish(*task)
+         finals = [e for e in self.events if e.kind == "final"]
+         self.assertEqual(len(finals), 1)
+ 
+@@ -137,7 +140,8 @@ class TestASRScheduler(unittest.TestCase):
+                 scheduler.push_audio(frame)
+             scheduler._running = True
+             scheduler.run_step()
+-            scheduler._finalize_utterance("silence")
++            task = scheduler._extract_utterance_locked("silence")
++        if task: scheduler._decode_and_publish(*task)
+         self.assertLessEqual(len([e for e in events if e.kind == "final"]), FINAL_QUEUE_CAP + 2)
+ 
+     def test_late_result_rejection_after_stop(self):
+@@ -297,7 +301,8 @@ class TestASREdgeCases(unittest.TestCase):
+             scheduler.push_audio(frame)
+         scheduler._running = True
+         scheduler.run_step()
+-        scheduler._finalize_utterance("max_duration")
++        task = scheduler._extract_utterance_locked("max_duration")
++        if task: scheduler._decode_and_publish(*task)
+         self.assertTrue(True)
+ 
+     def test_decode_timing_recorded(self):
+@@ -309,7 +314,8 @@ class TestASREdgeCases(unittest.TestCase):
+             scheduler.push_audio(frame)
+         scheduler._running = True
+         scheduler.run_step()
+-        scheduler._finalize_utterance("silence")
++        task = scheduler._extract_utterance_locked("silence")
++        if task: scheduler._decode_and_publish(*task)
+         self.assertGreater(len(transcriber._decode_times), 0)
+ 
+     def test_empty_utterance_no_final(self):
+@@ -317,10 +323,128 @@ class TestASREdgeCases(unittest.TestCase):
+         events = []
+         scheduler = ASRScheduler(transcriber, lambda e: events.append(e))
+         scheduler.start("s1", 0)
+-        scheduler._finalize_utterance("silence")
++        task = scheduler._extract_utterance_locked("silence")
++        if task: scheduler._decode_and_publish(*task)
+         finals = [e for e in events if e.kind == "final"]
+         self.assertEqual(len(finals), 0)
+ 
+ 
++class BlockingFakeTranscriber:
++    def __init__(self, text="blocked"):
++        self._text = text
++        self.entered = threading.Event()
++        self.release = threading.Event()
++        self._loaded = True
++        self._load_error = None
++        self._call_count = 0
++
++    @property
++    def is_loaded(self):
++        return self._loaded
++    @property
++    def load_error(self):
++        return self._load_error
++
++    def decode(self, pcm):
++        self._call_count += 1
++        self.entered.set()
++        self.release.wait(timeout=2.0)
++        return self._text
++
++
++class TestASRProvenance(unittest.TestCase):
++    def test_concurrent_reset_during_decode_rejects_stale_result(self):
++        transcriber = BlockingFakeTranscriber("stale_text")
++        events = []
++        scheduler = ASRScheduler(transcriber, lambda e: events.append(e))
++        
++        scheduler.start("sess1", 0, "rnnoise")
++        
++        # Push some speech frames
++        for i in range(30):
++            f = make_audio_frame(session_id="sess1", epoch=0, seq=i, sample_start=i*160, amplitude=0.8)
++            scheduler.push_audio(f)
++        
++        # Process them to set _in_speech = True
++        scheduler.run_step()
++        
++        # Push enough silence frames to trigger finalize (0.6s = 60 frames)
++        for i in range(65):
++            f = make_audio_frame(session_id="sess1", epoch=0, seq=30+i, sample_start=(30+i)*160, amplitude=0.0)
++            scheduler.push_audio(f)
++            
++        def run_thread():
++            scheduler.run_step()
++            
++        t = threading.Thread(target=run_thread)
++        t.start()
++        
++        try:
++            # Wait for decode to enter
++            transcriber.entered.wait(timeout=1.0)
++            self.assertTrue(transcriber.entered.is_set())
++            
++            # Concurrently reset the scheduler (e.g. user toggled mode)
++            scheduler.reset("sess1", 1, "raw")
++            scheduler.start("sess1", 1, "raw")
++            
++            # Push valid new-context frames
++            for i in range(50):
++                f = make_audio_frame(session_id="sess1", epoch=1, seq=i, sample_start=20000+i*160, amplitude=0.8)
++                scheduler.push_audio(f)
++                
++            # Release decode
++            transcriber.release.set()
++            t.join(timeout=1.0)
++            
++            # Old result must be rejected (stale)
++            finals = [e for e in events if e.kind == "final"]
++            self.assertEqual(len(finals), 0)
++            
++            # New frames must succeed with original new mode/start_ms
++            transcriber._text = "fresh_text"
++            transcriber.entered.clear()
++            transcriber.release.set() # Don't block the next decode
++            
++            # Flush new frames
++            scheduler.run_step()
++            scheduler.finish()
++            finals = [e for e in events if e.kind == "final"]
++            self.assertEqual(len(finals), 1)
++            self.assertEqual(finals[0].text, "fresh_text")
++            self.assertEqual(finals[0].mode, "raw")
++            self.assertEqual(finals[0].epoch, 1)
++            self.assertEqual(finals[0].start_ms, 20000 * 1000.0 / 48000.0)
++            
++        finally:
++            transcriber.release.set()
++            t.join(timeout=1.0)
++
++    def test_mixed_stale_frames_rejected_before_ingestion(self):
++        transcriber = FakeTranscriber(["fresh_text"])
++        events = []
++        scheduler = ASRScheduler(transcriber, lambda e: events.append(e))
++        
++        scheduler.start("sess2", 2, "rnnoise")
++        
++        # Interleave stale frames from old session/epoch with fresh frames
++        for i in range(100):
++            if i % 2 == 0:
++                f = make_audio_frame(session_id="sess1", epoch=1, seq=i, sample_start=i*160, amplitude=0.8) # Stale
++            else:
++                f = make_audio_frame(session_id="sess2", epoch=2, seq=i, sample_start=i*160, amplitude=0.8) # Fresh
++            scheduler.push_audio(f)
++            
++        scheduler.run_step()
++        scheduler.finish()
++        
++        finals = [e for e in events if e.kind == "final"]
++        self.assertEqual(len(finals), 1)
++        self.assertEqual(finals[0].text, "fresh_text")
++        self.assertEqual(finals[0].session_id, "sess2")
++        self.assertEqual(finals[0].epoch, 2)
++        # Fresh frames start at index 1, so sample_start is 160
++        self.assertEqual(finals[0].start_ms, 160 * 1000.0 / 48000.0)
++
+ if __name__ == "__main__":
+     unittest.main()

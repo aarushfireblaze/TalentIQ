@@ -25,9 +25,23 @@ with relevant context when safe. Spawn only when necessary. Favor Antigravity
 Pro for coding; use OpenCode MiMo v2.5 less for coding. Use Codex only when
 necessary, with Sol. Workers must not spawn other workers.
 
-Read `progress.md` and the assigned task brief. Respect file ownership and the
+Read the current resume state in `progress.md` and the assigned task brief.
+Read historical sections only when the task needs them. Respect file ownership and the
 live Orca dispatch preamble. Process and acknowledge the complete inbox batch
 at natural checkpoints. Do not reuse lifecycle IDs from previous dispatches.
+
+## Token discipline
+
+Reuse relevant workers and their existing context. Send only changed instructions
+on follow-ups; do not repeat the project history or unchanged task scope. Read
+only relevant files and specification sections, and reuse evidence already read
+within the session. Prefer completion messages over repeated terminal dumps.
+
+Keep mandatory heartbeats and status reports short. Save detailed evidence in the
+owned handoff file and report its path, commit, test result, and blocker. Run
+focused tests while editing and one full suite for the final snapshot. Repeat
+checks only for new changes, failures, or unresolved concerns. Do not spawn an
+extra worker solely to summarize another worker's work.
 
 ## Human checkpoints
 
