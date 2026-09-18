@@ -14,8 +14,8 @@ from voice_filtering.asr.whisper import (
     FINAL_QUEUE_CAP,
 )
 from voice_filtering.pipeline.controller import PipelineControllerImpl
-from voice_filtering.audio.capture import CaptureSource
 from voice_filtering.audio.resample import StreamingResampler
+from tests.fakes import FakeAudioSource
 
 
 class FakeTranscriber:
@@ -162,7 +162,7 @@ class TestASRScheduler(unittest.TestCase):
 
 class TestPipelineController(unittest.TestCase):
     def setUp(self):
-        self.source = CaptureSource()
+        self.source = FakeAudioSource()
         self.resampler = StreamingResampler()
         self.transcriber = FakeTranscriber(["hello world"])
         self.scheduler = ASRScheduler(self.transcriber, lambda e: None)
