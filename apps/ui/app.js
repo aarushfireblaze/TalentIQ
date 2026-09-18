@@ -5,6 +5,7 @@
     let currentState = 'idle';
     let currentSessionId = '';
     let currentMode = 'raw';
+    let lastConfirmedMode = 'raw';
     let transcript = [];
     let devices = [];
 
@@ -26,6 +27,8 @@
     const rnnoiseInfoEl = document.getElementById('rnnoiseInfo');
     const rnnoiseMetricsEl = document.getElementById('rnnoiseMetrics');
     const metricsSection = document.getElementById('metricsSection');
+    const rawLabel = document.getElementById('rawLabel');
+    const rawStatus = document.getElementById('rawStatus');
 
     function init() {
         fetchDevices();
@@ -125,6 +128,7 @@
         updateStatus(snap.state);
         currentSessionId = snap.session_id || '';
         currentMode = snap.mode || 'raw';
+        lastConfirmedMode = currentMode;
 
         if (snap.stages) {
             if (snap.stages.asr) {
@@ -139,9 +143,8 @@
                 if (rn.status === 'ready' || rn.status === 'active') {
                     rnnoiseRadio.disabled = false;
                     rnnoiseLabel.classList.remove('disabled');
-                    rnnoiseLabel.classList.add('active');
-                    rnnoiseStatusEl.textContent = rn.status === 'active' ? 'Active' : 'Ready';
-                    rnnoiseStatusEl.className = 'mode-status ' + (currentMode === 'rnnoise' ? 'active' : '');
+                    rnnoiseStatusEl.textContent = rn.status === 'active' ? 'Processing' : 'Available';
+                    rnnoiseStatusEl.className = 'mode-status';
                 } else if (rn.status === 'failed') {
                     rnnoiseRadio.disabled = true;
                     rnnoiseLabel.classList.add('disabled');
@@ -170,6 +173,9 @@
             if (r.value === currentMode) r.checked = true;
         });
 
+        updateModeSelection();
+        updatePendingMode(snap.pending_mode);
+
         if (snap.transcript) {
             transcript = snap.transcript;
             renderTranscript();
@@ -183,6 +189,7 @@
         statusEl.textContent = state.charAt(0).toUpperCase() + state.slice(1);
         statusEl.className = 'status ' + state;
         updateButtons();
+        updateModeSelection();
         permissionNotice.style.display = 'none';
     }
 
@@ -193,6 +200,41 @@
         stopBtn.disabled = isIdle || currentState === 'stopping';
         clearBtn.disabled = !isIdle;
         deviceSelect.disabled = !isIdle;
+    }
+
+    function updateModeSelection() {
+        const isListening = currentState === 'listening';
+        if (currentMode === 'raw') {
+            rawLabel.classList.add('active');
+            rawLabel.classList.remove('disabled');
+            rawStatus.textContent = isListening ? 'Processing' : 'Selected';
+            rawStatus.className = 'mode-status active';
+            rnnoiseLabel.classList.remove('active');
+            if (!rnnoiseRadio.disabled) {
+                rnnoiseStatusEl.textContent = 'Available';
+                rnnoiseStatusEl.className = 'mode-status';
+            }
+        } else if (currentMode === 'rnnoise') {
+            rnnoiseLabel.classList.add('active');
+            rnnoiseStatusEl.textContent = isListening ? 'Processing' : 'Selected';
+            rnnoiseStatusEl.className = 'mode-status active';
+            rawLabel.classList.remove('active');
+            rawStatus.textContent = 'Available';
+            rawStatus.className = 'mode-status';
+        }
+    }
+
+    function updatePendingMode(pending) {
+        if (!pending) return;
+        if (pending === 'rnnoise') {
+            rnnoiseLabel.classList.remove('active');
+            rnnoiseStatusEl.textContent = 'Switching...';
+            rnnoiseStatusEl.className = 'mode-status';
+        } else if (pending === 'raw') {
+            rawLabel.classList.remove('active');
+            rawStatus.textContent = 'Switching...';
+            rawStatus.className = 'mode-status';
+        }
     }
 
     function updateMeter(rmsDbfs, peakDbfs) {
@@ -278,7 +320,9 @@
             if (data.error) {
                 showError(data.error.message);
             } else {
+                if (data.mode) currentMode = data.mode;
                 updateStatus(data.state || 'listening');
+                applySnapshot(data);
             }
         } catch (e) {
             showError('Failed to start: ' + e.message);
@@ -366,8 +410,13 @@
             if (data.error) {
                 showError(data.error.message);
                 e.target.checked = false;
-                currentMode = 'raw';
-                document.querySelector('input[name="mode"][value="raw"]').checked = true;
+                currentMode = lastConfirmedMode;
+                document.querySelectorAll('input[name="mode"]').forEach(r => {
+                    if (r.value === currentMode) r.checked = true;
+                });
+                updateModeSelection();
+            } else {
+                applySnapshot(data);
             }
         } catch (e) {
             showError('Failed to switch mode: ' + e.message);

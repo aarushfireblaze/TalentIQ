@@ -74,7 +74,7 @@ class WhisperASR:
             beam_size=1,
             temperature=0,
             condition_on_previous_text=False,
-            vad_filter=False,
+            vad_filter=True,
         )
         text_parts = []
         for segment in segments:
@@ -91,6 +91,7 @@ class ASRScheduler:
         self._utterance_samples: int = 0
         self._session_id: str = ""
         self._epoch: int = 0
+        self._mode: str = "raw"
         self._segment_counter: int = 0
         self._running: bool = False
         self._lock = threading.Lock()
@@ -101,11 +102,15 @@ class ASRScheduler:
         self._final_queue: deque[TranscriptEvent] = deque(maxlen=FINAL_QUEUE_CAP)
         self._drop_count: int = 0
         self._partial_count: int = 0
+        self._decode_session_id: str = ""
+        self._decode_epoch: int = 0
+        self._decode_mode: str = "raw"
 
-    def start(self, session_id: str, epoch: int) -> None:
+    def start(self, session_id: str, epoch: int, mode: str = "raw") -> None:
         with self._lock:
             self._session_id = session_id
             self._epoch = epoch
+            self._mode = mode
             self._segment_counter = 0
             self._utterance_buf.clear()
             self._utterance_samples = 0
@@ -114,6 +119,9 @@ class ASRScheduler:
             self._final_queue.clear()
             self._drop_count = 0
             self._partial_count = 0
+            self._decode_session_id = session_id
+            self._decode_epoch = epoch
+            self._decode_mode = mode
 
     def push_audio(self, frame: AudioFrame) -> None:
         if not self._running:
@@ -132,14 +140,17 @@ class ASRScheduler:
         self._flush_utterance()
         return True
 
-    def reset(self, session_id: str, epoch: int) -> None:
+    def reset(self, session_id: str, epoch: int, mode: str = "raw") -> None:
         with self._lock:
             self._session_id = session_id
             self._epoch = epoch
+            self._mode = mode
             self._segment_counter += 1000
             self._utterance_buf.clear()
             self._utterance_samples = 0
             self._in_speech = False
+            self._ingress.clear()
+            self._drop_count = 0
 
     def close(self) -> None:
         self.finish()
@@ -150,6 +161,9 @@ class ASRScheduler:
             self._utterance_buf.clear()
             self._utterance_samples = 0
             self._in_speech = False
+            ctx_session = self._decode_session_id
+            ctx_epoch = self._decode_epoch
+            ctx_mode = self._decode_mode
         if not buf:
             return
         pcm = self._concat_utterance(buf)
@@ -162,6 +176,10 @@ class ASRScheduler:
             import traceback
             traceback.print_exc()
             return
+        with self._lock:
+            if self._epoch != ctx_epoch or self._session_id != ctx_session:
+                print(f'ASR stale decode rejected: ctx_epoch={ctx_epoch} current_epoch={self._epoch}')
+                return
         if not text.strip():
             print('ASR empty text')
             return
@@ -172,15 +190,15 @@ class ASRScheduler:
             start_ms = self._utterance_start_ms
             end_ms = start_ms + len(buf) * 10.0
             event = TranscriptEvent(
-                session_id=self._session_id,
+                session_id=ctx_session,
                 segment_id=seg_id,
                 revision=1,
                 kind="final",
                 text=text,
                 start_ms=start_ms,
                 end_ms=end_ms,
-                mode="raw",
-                epoch=self._epoch,
+                mode=ctx_mode,
+                epoch=ctx_epoch,
                 final_reason="stop",
             )
             self._final_queue.append(event)
@@ -214,6 +232,10 @@ class ASRScheduler:
                     self._utterance_start_ms = frame.sample_start * 1000.0 / 48000.0
                     self._utterance_buf.clear()
                     self._utterance_samples = 0
+                    with self._lock:
+                        self._decode_session_id = self._session_id
+                        self._decode_epoch = self._epoch
+                        self._decode_mode = self._mode
                 self._utterance_buf.append(frame)
                 self._utterance_samples += frame.valid_samples
                 duration_s = self._utterance_samples / 16000.0
@@ -238,6 +260,10 @@ class ASRScheduler:
         pcm = self._concat_utterance(buf)
         if len(pcm) == 0:
             return
+        with self._lock:
+            ctx_session = self._decode_session_id
+            ctx_epoch = self._decode_epoch
+            ctx_mode = self._decode_mode
         try:
             text = self._transcriber.decode(pcm)
         except Exception as e:
@@ -245,6 +271,10 @@ class ASRScheduler:
             import traceback
             traceback.print_exc()
             return
+        with self._lock:
+            if self._epoch != ctx_epoch or self._session_id != ctx_session:
+                print(f'ASR stale decode rejected: ctx_epoch={ctx_epoch} current_epoch={self._epoch}')
+                return
         if not text.strip():
             print('ASR empty text')
             return
@@ -255,15 +285,15 @@ class ASRScheduler:
             start_ms = self._utterance_start_ms
             end_ms = start_ms + len(buf) * 10.0
             event = TranscriptEvent(
-                session_id=self._session_id,
+                session_id=ctx_session,
                 segment_id=seg_id,
                 revision=1,
                 kind="final",
                 text=text,
                 start_ms=start_ms,
                 end_ms=end_ms,
-                mode="raw",
-                epoch=self._epoch,
+                mode=ctx_mode,
+                epoch=ctx_epoch,
                 final_reason=reason,
             )
             self._final_queue.append(event)
