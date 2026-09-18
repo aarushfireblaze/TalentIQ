@@ -246,6 +246,10 @@ class RNNoiseProcessor:
 
     def reset(self) -> None:
         self._metrics.reset()
+        if self._loaded and self._lib is not None:
+            if self._state is not None:
+                self._state.close()
+            self._state = load_model(self._lib)
 
     def process(self, frame: AudioFrame) -> AudioFrame:
         if not self._loaded or self._state is None:

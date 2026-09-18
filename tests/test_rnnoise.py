@@ -1,4 +1,5 @@
 import unittest
+import threading
 import time
 import uuid
 import numpy as np
@@ -10,6 +11,7 @@ from voice_filtering.audio.rnnoise import (
     _SCALE_UP, _SCALE_DOWN, RNNoiseMetrics,
 )
 from voice_filtering.audio.resample import StreamingResampler
+from voice_filtering.asr.whisper import ASRScheduler
 from voice_filtering.pipeline.controller import PipelineControllerImpl
 from tests.fakes import make_frames, make_frame
 
@@ -412,6 +414,169 @@ class TestPipelineControllerModes(unittest.TestCase):
         )
         result = ctrl.switch_mode("combined")
         self.assertIn("error", result)
+
+
+class ControllableTranscriber:
+    """Fake transcriber that blocks decode until released, for testing
+    reset-during-in-flight-decode."""
+    def __init__(self):
+        self.decode_started = threading.Event()
+        self.decode_release = threading.Event()
+        self._loaded = True
+        self._load_error = None
+
+    @property
+    def is_loaded(self):
+        return self._loaded
+
+    @property
+    def load_error(self):
+        return self._load_error
+
+    def decode(self, pcm16k):
+        self.decode_started.set()
+        self.decode_release.wait(timeout=5.0)
+        return "hello"
+
+
+class TestModeProvenance(unittest.TestCase):
+    """Regression: TranscriptEvent.mode must reflect the actual pipeline mode,
+    not be hardcoded to 'raw'. Tests exercise run_step with valid 16kHz audio."""
+
+    def _make_16k_frame(self, session_id="s1", epoch=0, seq=0,
+                        amplitude=0.5, samples=160):
+        pcm = np.full(samples, amplitude, dtype=np.float32)
+        return AudioFrame(
+            session_id=session_id, epoch=epoch, seq=seq,
+            sample_start=seq * 160, captured_ns=0, sample_rate=16000,
+            pcm=pcm, valid_samples=samples, discontinuity=False,
+        )
+
+    def _make_scheduler(self, transcriber=None):
+        self.events = []
+        if transcriber is None:
+            transcriber = FakeTranscriber(["hello"])
+        self.transcriber = transcriber
+        return ASRScheduler(self.transcriber, lambda e: self.events.append(e))
+
+    def _speech_frames(self, count, session_id="s1", epoch=0, start_seq=0):
+        """Generate count frames above -45 dBFS threshold (amplitude 0.5)."""
+        return [
+            self._make_16k_frame(session_id=session_id, epoch=epoch,
+                                 seq=start_seq + i, amplitude=0.5)
+            for i in range(count)
+        ]
+
+    def _silence_frames(self, count, session_id="s1", epoch=0, start_seq=100):
+        """Generate count frames below threshold (amplitude 0.0)."""
+        return [
+            self._make_16k_frame(session_id=session_id, epoch=0,
+                                 seq=start_seq + i, amplitude=0.0)
+            for i in range(count)
+        ]
+
+    def _feed_and_step(self, sched, frames):
+        for f in frames:
+            sched.push_audio(f)
+        sched.run_step()
+
+    def test_scheduler_start_accepts_mode(self):
+        sched = self._make_scheduler()
+        sched.start("s1", 0, mode="rnnoise")
+        with sched._lock:
+            self.assertEqual(sched._mode, "rnnoise")
+
+    def test_scheduler_reset_accepts_mode(self):
+        sched = self._make_scheduler()
+        sched.start("s1", 0, mode="raw")
+        sched.reset("s1", 1, mode="rnnoise")
+        with sched._lock:
+            self.assertEqual(sched._mode, "rnnoise")
+            self.assertEqual(sched._epoch, 1)
+
+    def test_transcript_event_carries_rnnoise_mode(self):
+        sched = self._make_scheduler()
+        sched.start("s1", 0, mode="rnnoise")
+        self._feed_and_step(sched, self._speech_frames(5))
+        self._feed_and_step(sched, self._silence_frames(60))
+        self.assertEqual(len(self.events), 1)
+        self.assertEqual(self.events[0].mode, "rnnoise")
+        self.assertEqual(self.events[0].epoch, 0)
+
+    def test_transcript_event_carries_raw_mode(self):
+        sched = self._make_scheduler()
+        sched.start("s1", 0, mode="raw")
+        self._feed_and_step(sched, self._speech_frames(5))
+        self._feed_and_step(sched, self._silence_frames(60))
+        self.assertEqual(len(self.events), 1)
+        self.assertEqual(self.events[0].mode, "raw")
+
+    def test_mode_switch_updates_event_provenance(self):
+        sched = self._make_scheduler()
+        sched.start("s1", 0, mode="raw")
+        self._feed_and_step(sched, self._speech_frames(5))
+        self._feed_and_step(sched, self._silence_frames(60))
+        self.assertEqual(len(self.events), 1)
+        self.assertEqual(self.events[0].mode, "raw")
+
+        sched.reset("s1", 1, mode="rnnoise")
+        self._feed_and_step(sched, self._speech_frames(5, epoch=1, start_seq=10))
+        self._feed_and_step(sched, self._silence_frames(60, start_seq=110))
+        self.assertEqual(len(self.events), 2)
+        self.assertEqual(self.events[1].mode, "rnnoise")
+        self.assertEqual(self.events[1].epoch, 1)
+
+    def test_stale_decode_rejected_on_reset_during_inflight(self):
+        blocker = ControllableTranscriber()
+        sched = self._make_scheduler(blocker)
+        sched.start("s1", 0, mode="raw")
+        for f in self._speech_frames(5):
+            sched.push_audio(f)
+        for f in self._silence_frames(60):
+            sched.push_audio(f)
+
+        decode_thread = threading.Thread(target=sched.run_step)
+        decode_thread.start()
+        try:
+            blocker.decode_started.wait(timeout=2.0)
+            self.assertTrue(blocker.decode_started.is_set())
+
+            sched.reset("s1", 1, mode="rnnoise")
+        finally:
+            blocker.decode_release.set()
+        decode_thread.join(timeout=2.0)
+
+        self.assertEqual(len(self.events), 0)
+
+        self._feed_and_step(sched, self._speech_frames(5, epoch=1, start_seq=10))
+        self._feed_and_step(sched, self._silence_frames(60, start_seq=110))
+        self.assertEqual(len(self.events), 1)
+        self.assertEqual(self.events[0].mode, "rnnoise")
+        self.assertEqual(self.events[0].epoch, 1)
+
+    def test_ingress_cleared_on_reset(self):
+        sched = self._make_scheduler()
+        sched.start("s1", 0, mode="raw")
+        for i in range(5):
+            sched.push_audio(self._make_16k_frame(seq=i))
+        self.assertEqual(len(sched._ingress), 5)
+        sched.reset("s1", 1, mode="rnnoise")
+        self.assertEqual(len(sched._ingress), 0)
+
+    def test_stale_frames_in_run_step_batch_rejected(self):
+        sched = self._make_scheduler()
+        sched.start("s1", 0, mode="raw")
+        for f in self._speech_frames(3):
+            sched.push_audio(f)
+        frames = []
+        with sched._lock:
+            while sched._ingress:
+                frames.append(sched._ingress.popleft())
+        sched.reset("s1", 1, mode="rnnoise")
+        for f in frames:
+            sched.push_audio(f)
+        sched.run_step()
+        self.assertEqual(len(self.events), 0)
 
 
 if __name__ == "__main__":

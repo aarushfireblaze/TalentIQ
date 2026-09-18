@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from dataclasses import replace
 from typing import Callable
 
 import numpy as np
@@ -83,7 +84,7 @@ class PipelineControllerImpl:
             self._resampler.reset()
             if self._rnnoise is not None:
                 self._rnnoise.reset()
-            self._scheduler.start(self._session_id, self._epoch)
+            self._scheduler.start(self._session_id, self._epoch, self._mode)
             with self._lock:
                 self._state = "listening"
             self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
@@ -143,7 +144,7 @@ class PipelineControllerImpl:
             self._epoch += 1
             self._mode_switch_count += 1
             self._gap_count += 1
-        self._scheduler.reset(self._session_id, self._epoch)
+        self._scheduler.reset(self._session_id, self._epoch, self._mode)
         self._resampler.reset()
         if self._rnnoise is not None:
             self._rnnoise.reset()
@@ -217,6 +218,7 @@ class PipelineControllerImpl:
             "session_id": self._session_id,
             "epoch": self._epoch,
             "mode": self._mode,
+            "pending_mode": self._pending_mode,
             "device_id": self._device_id,
             "recording": self._recording,
             "stages": stages,
@@ -271,6 +273,11 @@ class PipelineControllerImpl:
     def _capture_loop_body(self, frame: AudioFrame) -> bool:
         """Process a single captured frame. Returns False if capture should stop."""
         self._apply_mode_switch()
+
+        with self._lock:
+            epoch = self._epoch
+            session_id = self._session_id
+        frame = replace(frame, epoch=epoch, session_id=session_id)
 
         pcm = frame.pcm[: frame.valid_samples]
         if len(pcm) > 0:
