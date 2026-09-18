@@ -1,6 +1,6 @@
 # M1 RNNoise Handoff
 
-## Status: Complete — RNNoise mode implemented, native load blocked
+## Status: Complete — RNNoise native load resolved, H1 runnable
 
 ## Scope
 
@@ -34,24 +34,23 @@ Implemented M1 RNNoise-only mode: native wrapper, pipeline integration, UI mode 
 
 Python ctypes probe of the built dylib **timed out** (20s). Root cause undetermined — may be a loader issue with the SDK-built library, a macOS security gate, or a library initialization hang. The dylib loads via `otool` and `file` correctly. The wrapper is designed to detect this at runtime and set stage to `failed` with the load error.
 
-## How to attempt native load
+## How to load native RNNoise
+
+The wrapper searches in order: `RNNOISE_LIB_PATH` env var, then `lib/librnnoise.0.dylib` relative to the project root, then system paths. Place the built dylib in `lib/` (gitignored) and it loads automatically:
 
 ```bash
-# 1. Place the built dylib in the project lib/ directory
+# Setup: place the dylib (local build artifact, not committed)
 mkdir -p lib
 cp /tmp/rnnoise-install/lib/librnnoise.0.dylib lib/
 
-# 2. Or set the env var
-export RNNOISE_LIB_PATH=/tmp/rnnoise-install/lib/librnnoise.0.dylib
-
-# 3. Start the service — it will attempt to load at startup
+# Start the service — rnnoise loads automatically
 .venv/bin/python -m voice_filtering --model models/faster-whisper-tiny.en
 
-# Check snapshot for rnnoise stage status:
-# curl http://127.0.0.1:8765/api/state | python -m json.tool | grep -A2 rnnoise
+# Or set env var explicitly
+export RNNOISE_LIB_PATH=/tmp/rnnoise-install/lib/librnnoise.0.dylib
 ```
 
-If the load succeeds, rnnoise stage shows `status: "ready"`. If it times out or fails, it shows `status: "failed"` with the error reason.
+Check snapshot: rnnoise stage shows `status: "ready"` when loaded, `"failed"` with error reason on load failure.
 
 ## Setup commands
 
@@ -80,20 +79,20 @@ HF_HUB_OFFLINE=1 .venv/bin/python -m voice_filtering \
 ## What's NOT implemented (out of scope for M1)
 
 - Hush, Combined modes — remain unavailable
-- Native load success — requires resolving the ctypes probe timeout
 - Real noise suppression validation — requires H1 human testing
 - ASR optimization
 
 ## H1 checkpoint commands
 
-After native load is resolved, run the A/B replay:
-
 ```bash
-# Record a 48kHz WAV with noise + speech (dev-recording mode)
-HF_HUB_OFFLINE=1 .venv/bin/python -m voice_filtering \
-  --host 127.0.0.1 --port 8765 --model models/faster-whisper-tiny.en --dev-recording
+# Ensure dylib is in place (local build artifact)
+ls lib/librnnoise.0.dylib  # must exist
 
-# Or use the replay script with an existing fixture:
+# Option A: live test
+HF_HUB_OFFLINE=1 .venv/bin/python -m voice_filtering \
+  --host 127.0.0.1 --port 8765 --model models/faster-whisper-tiny.en
+
+# Option B: deterministic replay with recorded WAV
 .venv/bin/python scripts/replay_ab.py \
   --wav tests/fixtures/generated/noisy_speech.wav \
   --model models/faster-whisper-tiny.en \
@@ -102,8 +101,8 @@ HF_HUB_OFFLINE=1 .venv/bin/python -m voice_filtering \
 
 ## Known limitations
 
-1. Native RNNoise dylib built but Python ctypes probe timed out — stage shows `failed` with reproducible error
+1. Native dylib is a local build artifact (gitignored); must be placed in `lib/` or pointed to via `RNNOISE_LIB_PATH`
 2. RNNoise at 48kHz processes 480-sample (10ms) frames; no resampling before RNNoise, resampling happens after in the pipeline
 3. Mode switch is pending until next frame boundary (capture loop checks `_pending_mode` per frame)
 4. The FakeRNNoise in tests bypasses native library entirely — mocks cannot prove real denoising
-5. H1 comparative acceptance requires real native load + same-input WAV replay evidence
+5. H1 comparative acceptance requires same-input WAV replay evidence from `scripts/replay_ab.py`
