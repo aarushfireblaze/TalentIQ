@@ -20,15 +20,26 @@ class StreamingResampler:
             dtype='float32',
             quality='HQ'
         )
-        self._total_input_samples: int = 0
-        self._output_frame_count: int = 0
         self._tail_buffer = np.array([], dtype=np.float32)
+        self._metadata_fifo = []
+        self._last_session = None
+        self._last_epoch = None
+        self._expected_sample_start = None
+        self._pending_discontinuity = False
 
     def reset(self) -> None:
         self._stream.clear()
-        self._total_input_samples = 0
-        self._output_frame_count = 0
         self._tail_buffer = np.array([], dtype=np.float32)
+        self._metadata_fifo.clear()
+        self._last_session = None
+        self._last_epoch = None
+        self._expected_sample_start = None
+        self._pending_discontinuity = True
+
+    def _get_next_meta(self) -> dict:
+        if self._metadata_fifo:
+            return self._metadata_fifo.pop(0)
+        raise ValueError("Metadata FIFO underflow; output exceeds pushed source frames")
 
     def _chunk_output(self, arr: np.ndarray, is_last: bool = False) -> list[AudioFrame]:
         if len(self._tail_buffer) > 0:
@@ -39,42 +50,48 @@ class StreamingResampler:
         offset = 0
         while offset + OUTPUT_FRAME_SAMPLES <= len(arr):
             chunk = arr[offset:offset+OUTPUT_FRAME_SAMPLES].copy()
-            sample_start = self._output_frame_count * SOURCE_FRAME_SAMPLES
+            meta = self._get_next_meta()
+            
+            discont = self._pending_discontinuity
+            self._pending_discontinuity = False
+
             all_blocks.append(
                 AudioFrame(
-                    session_id="",
-                    epoch=0,
-                    seq=0,
-                    sample_start=sample_start,
-                    captured_ns=0,
+                    session_id=meta['session_id'],
+                    epoch=meta['epoch'],
+                    seq=meta['seq'],
+                    sample_start=meta['sample_start'],
+                    captured_ns=meta['captured_ns'],
                     sample_rate=TARGET_RATE,
                     pcm=chunk,
                     valid_samples=OUTPUT_FRAME_SAMPLES,
-                    discontinuity=False,
+                    discontinuity=discont,
                 )
             )
-            self._output_frame_count += 1
             offset += OUTPUT_FRAME_SAMPLES
             
         remaining = arr[offset:]
         if is_last and len(remaining) > 0:
             padded = np.zeros(OUTPUT_FRAME_SAMPLES, dtype=np.float32)
             padded[:len(remaining)] = remaining
-            sample_start = self._output_frame_count * SOURCE_FRAME_SAMPLES
+            meta = self._get_next_meta()
+            
+            discont = self._pending_discontinuity
+            self._pending_discontinuity = False
+
             all_blocks.append(
                 AudioFrame(
-                    session_id="",
-                    epoch=0,
-                    seq=0,
-                    sample_start=sample_start,
-                    captured_ns=0,
+                    session_id=meta['session_id'],
+                    epoch=meta['epoch'],
+                    seq=meta['seq'],
+                    sample_start=meta['sample_start'],
+                    captured_ns=meta['captured_ns'],
                     sample_rate=TARGET_RATE,
                     pcm=padded,
                     valid_samples=len(remaining),
-                    discontinuity=False,
+                    discontinuity=discont,
                 )
             )
-            self._output_frame_count += 1
         elif len(remaining) > 0:
             self._tail_buffer = remaining
             
@@ -84,11 +101,41 @@ class StreamingResampler:
         pcm = frame.pcm[: frame.valid_samples].astype(np.float32).copy()
         if len(pcm) == 0:
             return []
-        self._total_input_samples += len(pcm)
+            
+        is_discontinuous = False
+        if self._last_session is not None:
+            if frame.session_id != self._last_session or frame.epoch != self._last_epoch:
+                is_discontinuous = True
+            elif self._expected_sample_start is not None and frame.sample_start != self._expected_sample_start:
+                is_discontinuous = True
+            elif frame.discontinuity:
+                is_discontinuous = True
+
+        if is_discontinuous:
+            self.reset()
+            self._pending_discontinuity = True
+            
+        if frame.discontinuity:
+            self._pending_discontinuity = True
+
+        self._last_session = frame.session_id
+        self._last_epoch = frame.epoch
+        self._expected_sample_start = frame.sample_start + len(pcm)
+        
+        self._metadata_fifo.append({
+            'session_id': frame.session_id,
+            'epoch': frame.epoch,
+            'seq': frame.seq,
+            'sample_start': frame.sample_start,
+            'captured_ns': frame.captured_ns
+        })
+
         out = self._stream.resample_chunk(pcm, last=False)
         return self._chunk_output(out, is_last=False)
 
     def finish(self) -> list[AudioFrame]:
         dummy = np.array([], dtype=np.float32)
         out = self._stream.resample_chunk(dummy, last=True)
-        return self._chunk_output(out, is_last=True)
+        ret = self._chunk_output(out, is_last=True)
+        self.reset()
+        return ret
