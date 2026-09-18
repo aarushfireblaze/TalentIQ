@@ -1,6 +1,6 @@
 # H1 — Static Noise Checkpoint: RNNoise A/B
 
-Status: **NOT RUN**
+Status: **USER TEST FOUND DEFECTS — RETEST REQUIRED**. Comparative same-recording acceptance remains **NOT RUN**.
 Depends on: H0 pass + M1 completion
 Blocks: H2, H3
 
@@ -115,4 +115,4 @@ Mocks establish plumbing only; nonzero output does not establish real suppressio
 
 | Date | Tester | Feedback | Action Taken |
 |------|--------|----------|--------------|
-| — | — | — | — |
+| 2026-09-18 | User | Raw and RNNoise both appear active; cannot visibly enable/disable either. Background talking produces random transcripts; clear close-mic primary speech is recognized. | H1 not passed. Reused OpenCode MiMo worker assigned control/state, pipeline and ASR investigation under `task_4ecf5fa7f28d`; retest after verified fixes. |

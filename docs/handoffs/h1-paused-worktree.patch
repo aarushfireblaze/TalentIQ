@@ -1,0 +1,384 @@
+diff --git a/apps/ui/app.js b/apps/ui/app.js
+index 445c6d6..f9203a1 100644
+--- a/apps/ui/app.js
++++ b/apps/ui/app.js
+@@ -26,6 +26,8 @@
+     const rnnoiseInfoEl = document.getElementById('rnnoiseInfo');
+     const rnnoiseMetricsEl = document.getElementById('rnnoiseMetrics');
+     const metricsSection = document.getElementById('metricsSection');
++    const rawLabel = document.getElementById('rawLabel');
++    const rawStatus = document.getElementById('rawStatus');
+ 
+     function init() {
+         fetchDevices();
+@@ -139,9 +141,8 @@
+                 if (rn.status === 'ready' || rn.status === 'active') {
+                     rnnoiseRadio.disabled = false;
+                     rnnoiseLabel.classList.remove('disabled');
+-                    rnnoiseLabel.classList.add('active');
+-                    rnnoiseStatusEl.textContent = rn.status === 'active' ? 'Active' : 'Ready';
+-                    rnnoiseStatusEl.className = 'mode-status ' + (currentMode === 'rnnoise' ? 'active' : '');
++                    rnnoiseStatusEl.textContent = rn.status === 'active' ? 'Processing' : 'Available';
++                    rnnoiseStatusEl.className = 'mode-status';
+                 } else if (rn.status === 'failed') {
+                     rnnoiseRadio.disabled = true;
+                     rnnoiseLabel.classList.add('disabled');
+@@ -170,6 +171,8 @@
+             if (r.value === currentMode) r.checked = true;
+         });
+ 
++        updateModeSelection();
++
+         if (snap.transcript) {
+             transcript = snap.transcript;
+             renderTranscript();
+@@ -183,6 +186,7 @@
+         statusEl.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+         statusEl.className = 'status ' + state;
+         updateButtons();
++        updateModeSelection();
+         permissionNotice.style.display = 'none';
+     }
+ 
+@@ -195,6 +199,25 @@
+         deviceSelect.disabled = !isIdle;
+     }
+ 
++    function updateModeSelection() {
++        const isListening = currentState === 'listening';
++        if (currentMode === 'raw') {
++            rawLabel.classList.add('active');
++            rawLabel.classList.remove('disabled');
++            rawStatus.textContent = isListening ? 'Processing' : 'Selected';
++            rawStatus.className = 'mode-status active';
++            rnnoiseLabel.classList.remove('active');
++            rnnoiseStatusEl.className = rnnoiseRadio.disabled ? 'mode-status unavailable' : 'mode-status';
++        } else if (currentMode === 'rnnoise') {
++            rnnoiseLabel.classList.add('active');
++            rnnoiseStatusEl.textContent = isListening ? 'Processing' : 'Selected';
++            rnnoiseStatusEl.className = 'mode-status active';
++            rawLabel.classList.remove('active');
++            rawStatus.textContent = 'Available';
++            rawStatus.className = 'mode-status';
++        }
++    }
++
+     function updateMeter(rmsDbfs, peakDbfs) {
+         const normalized = Math.max(0, Math.min(100, (rmsDbfs + 60) * (100 / 60)));
+         meterEl.style.width = normalized + '%';
+@@ -278,7 +301,9 @@
+             if (data.error) {
+                 showError(data.error.message);
+             } else {
++                if (data.mode) currentMode = data.mode;
+                 updateStatus(data.state || 'listening');
++                applySnapshot(data);
+             }
+         } catch (e) {
+             showError('Failed to start: ' + e.message);
+@@ -368,6 +393,13 @@
+                 e.target.checked = false;
+                 currentMode = 'raw';
+                 document.querySelector('input[name="mode"][value="raw"]').checked = true;
++                updateModeSelection();
++            } else if (data.mode) {
++                currentMode = data.mode;
++                document.querySelectorAll('input[name="mode"]').forEach(r => {
++                    if (r.value === currentMode) r.checked = true;
++                });
++                updateModeSelection();
+             }
+         } catch (e) {
+             showError('Failed to switch mode: ' + e.message);
+diff --git a/apps/ui/index.html b/apps/ui/index.html
+index 8781ea6..971ba0e 100644
+--- a/apps/ui/index.html
++++ b/apps/ui/index.html
+@@ -35,10 +35,10 @@
+         <div class="modes">
+             <h3>Pipeline Mode</h3>
+             <div class="mode-options">
+-                <label class="mode-label active">
++                <label class="mode-label" id="rawLabel">
+                     <input type="radio" name="mode" value="raw" checked>
+                     <span>Raw</span>
+-                    <span class="mode-status active">Active</span>
++                    <span class="mode-status" id="rawStatus"></span>
+                 </label>
+                 <label class="mode-label" id="rnnoiseLabel">
+                     <input type="radio" name="mode" value="rnnoise" id="rnnoiseRadio">
+diff --git a/src/voice_filtering/asr/whisper.py b/src/voice_filtering/asr/whisper.py
+index 485f25d..af63c48 100644
+--- a/src/voice_filtering/asr/whisper.py
++++ b/src/voice_filtering/asr/whisper.py
+@@ -74,7 +74,7 @@ class WhisperASR:
+             beam_size=1,
+             temperature=0,
+             condition_on_previous_text=False,
+-            vad_filter=False,
++            vad_filter=True,
+         )
+         text_parts = []
+         for segment in segments:
+@@ -91,6 +91,7 @@ class ASRScheduler:
+         self._utterance_samples: int = 0
+         self._session_id: str = ""
+         self._epoch: int = 0
++        self._mode: str = "raw"
+         self._segment_counter: int = 0
+         self._running: bool = False
+         self._lock = threading.Lock()
+@@ -101,11 +102,15 @@ class ASRScheduler:
+         self._final_queue: deque[TranscriptEvent] = deque(maxlen=FINAL_QUEUE_CAP)
+         self._drop_count: int = 0
+         self._partial_count: int = 0
++        self._decode_session_id: str = ""
++        self._decode_epoch: int = 0
++        self._decode_mode: str = "raw"
+ 
+-    def start(self, session_id: str, epoch: int) -> None:
++    def start(self, session_id: str, epoch: int, mode: str = "raw") -> None:
+         with self._lock:
+             self._session_id = session_id
+             self._epoch = epoch
++            self._mode = mode
+             self._segment_counter = 0
+             self._utterance_buf.clear()
+             self._utterance_samples = 0
+@@ -114,6 +119,9 @@ class ASRScheduler:
+             self._final_queue.clear()
+             self._drop_count = 0
+             self._partial_count = 0
++            self._decode_session_id = session_id
++            self._decode_epoch = epoch
++            self._decode_mode = mode
+ 
+     def push_audio(self, frame: AudioFrame) -> None:
+         if not self._running:
+@@ -132,14 +140,17 @@ class ASRScheduler:
+         self._flush_utterance()
+         return True
+ 
+-    def reset(self, session_id: str, epoch: int) -> None:
++    def reset(self, session_id: str, epoch: int, mode: str = "raw") -> None:
+         with self._lock:
+             self._session_id = session_id
+             self._epoch = epoch
++            self._mode = mode
+             self._segment_counter += 1000
+             self._utterance_buf.clear()
+             self._utterance_samples = 0
+             self._in_speech = False
++            self._ingress.clear()
++            self._drop_count = 0
+ 
+     def close(self) -> None:
+         self.finish()
+@@ -150,6 +161,9 @@ class ASRScheduler:
+             self._utterance_buf.clear()
+             self._utterance_samples = 0
+             self._in_speech = False
++            ctx_session = self._decode_session_id
++            ctx_epoch = self._decode_epoch
++            ctx_mode = self._decode_mode
+         if not buf:
+             return
+         pcm = self._concat_utterance(buf)
+@@ -162,6 +176,10 @@ class ASRScheduler:
+             import traceback
+             traceback.print_exc()
+             return
++        with self._lock:
++            if self._epoch != ctx_epoch or self._session_id != ctx_session:
++                print(f'ASR stale decode rejected: ctx_epoch={ctx_epoch} current_epoch={self._epoch}')
++                return
+         if not text.strip():
+             print('ASR empty text')
+             return
+@@ -172,15 +190,15 @@ class ASRScheduler:
+             start_ms = self._utterance_start_ms
+             end_ms = start_ms + len(buf) * 10.0
+             event = TranscriptEvent(
+-                session_id=self._session_id,
++                session_id=ctx_session,
+                 segment_id=seg_id,
+                 revision=1,
+                 kind="final",
+                 text=text,
+                 start_ms=start_ms,
+                 end_ms=end_ms,
+-                mode="raw",
+-                epoch=self._epoch,
++                mode=ctx_mode,
++                epoch=ctx_epoch,
+                 final_reason="stop",
+             )
+             self._final_queue.append(event)
+@@ -214,6 +232,10 @@ class ASRScheduler:
+                     self._utterance_start_ms = frame.sample_start * 1000.0 / 48000.0
+                     self._utterance_buf.clear()
+                     self._utterance_samples = 0
++                    with self._lock:
++                        self._decode_session_id = self._session_id
++                        self._decode_epoch = self._epoch
++                        self._decode_mode = self._mode
+                 self._utterance_buf.append(frame)
+                 self._utterance_samples += frame.valid_samples
+                 duration_s = self._utterance_samples / 16000.0
+@@ -238,6 +260,10 @@ class ASRScheduler:
+         pcm = self._concat_utterance(buf)
+         if len(pcm) == 0:
+             return
++        with self._lock:
++            ctx_session = self._decode_session_id
++            ctx_epoch = self._decode_epoch
++            ctx_mode = self._decode_mode
+         try:
+             text = self._transcriber.decode(pcm)
+         except Exception as e:
+@@ -245,6 +271,10 @@ class ASRScheduler:
+             import traceback
+             traceback.print_exc()
+             return
++        with self._lock:
++            if self._epoch != ctx_epoch or self._session_id != ctx_session:
++                print(f'ASR stale decode rejected: ctx_epoch={ctx_epoch} current_epoch={self._epoch}')
++                return
+         if not text.strip():
+             print('ASR empty text')
+             return
+@@ -255,15 +285,15 @@ class ASRScheduler:
+             start_ms = self._utterance_start_ms
+             end_ms = start_ms + len(buf) * 10.0
+             event = TranscriptEvent(
+-                session_id=self._session_id,
++                session_id=ctx_session,
+                 segment_id=seg_id,
+                 revision=1,
+                 kind="final",
+                 text=text,
+                 start_ms=start_ms,
+                 end_ms=end_ms,
+-                mode="raw",
+-                epoch=self._epoch,
++                mode=ctx_mode,
++                epoch=ctx_epoch,
+                 final_reason=reason,
+             )
+             self._final_queue.append(event)
+diff --git a/src/voice_filtering/audio/rnnoise.py b/src/voice_filtering/audio/rnnoise.py
+index 2b81a67..0dd9de6 100644
+--- a/src/voice_filtering/audio/rnnoise.py
++++ b/src/voice_filtering/audio/rnnoise.py
+@@ -246,6 +246,10 @@ class RNNoiseProcessor:
+ 
+     def reset(self) -> None:
+         self._metrics.reset()
++        if self._loaded and self._lib is not None:
++            if self._state is not None:
++                self._state.close()
++            self._state = load_model(self._lib)
+ 
+     def process(self, frame: AudioFrame) -> AudioFrame:
+         if not self._loaded or self._state is None:
+diff --git a/src/voice_filtering/pipeline/controller.py b/src/voice_filtering/pipeline/controller.py
+index 544a9e3..57aefe2 100644
+--- a/src/voice_filtering/pipeline/controller.py
++++ b/src/voice_filtering/pipeline/controller.py
+@@ -83,7 +83,7 @@ class PipelineControllerImpl:
+             self._resampler.reset()
+             if self._rnnoise is not None:
+                 self._rnnoise.reset()
+-            self._scheduler.start(self._session_id, self._epoch)
++            self._scheduler.start(self._session_id, self._epoch, self._mode)
+             with self._lock:
+                 self._state = "listening"
+             self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
+@@ -143,7 +143,7 @@ class PipelineControllerImpl:
+             self._epoch += 1
+             self._mode_switch_count += 1
+             self._gap_count += 1
+-        self._scheduler.reset(self._session_id, self._epoch)
++        self._scheduler.reset(self._session_id, self._epoch, self._mode)
+         self._resampler.reset()
+         if self._rnnoise is not None:
+             self._rnnoise.reset()
+diff --git a/tests/test_rnnoise.py b/tests/test_rnnoise.py
+index a986571..0794d92 100644
+--- a/tests/test_rnnoise.py
++++ b/tests/test_rnnoise.py
+@@ -414,5 +414,74 @@ class TestPipelineControllerModes(unittest.TestCase):
+         self.assertIn("error", result)
+ 
+ 
++class TestModeProvenance(unittest.TestCase):
++    """Regression: TranscriptEvent.mode must reflect the actual pipeline mode,
++    not be hardcoded to 'raw'."""
++
++    def _make_scheduler_and_transcriber(self):
++        self.events = []
++        self.transcriber = FakeTranscriber(["hello"])
++        self.scheduler = ASRScheduler(
++            self.transcriber, lambda e: self.events.append(e)
++        )
++        return self.scheduler
++
++    def test_scheduler_start_accepts_mode(self):
++        sched = self._make_scheduler_and_transcriber()
++        sched.start("s1", 0, mode="rnnoise")
++        with sched._lock:
++            self.assertEqual(sched._mode, "rnnoise")
++
++    def test_scheduler_reset_accepts_mode(self):
++        sched = self._make_scheduler_and_transcriber()
++        sched.start("s1", 0, mode="raw")
++        sched.reset("s1", 1, mode="rnnoise")
++        with sched._lock:
++            self.assertEqual(sched._mode, "rnnoise")
++            self.assertEqual(sched._epoch, 1)
++
++    def test_transcript_event_carries_mode(self):
++        sched = self._make_scheduler_and_transcriber()
++        sched.start("s1", 0, mode="rnnoise")
++        frame = make_frame(session_id="s1", epoch=0, seq=0,
++                           sample_start=0, captured_ns=0, sample_rate=48000,
++                           valid_samples=480, pcm=np.ones(480, dtype=np.float32) * 0.5)
++        sched.push_audio(frame)
++        sched._finalize_utterance("test")
++        self.assertEqual(len(self.events), 1)
++        self.assertEqual(self.events[0].mode, "rnnoise")
++
++    def test_raw_mode_stamps_raw(self):
++        sched = self._make_scheduler_and_transcriber()
++        sched.start("s1", 0, mode="raw")
++        frame = make_frame(session_id="s1", epoch=0, seq=0,
++                           sample_start=0, captured_ns=0, sample_rate=48000,
++                           valid_samples=480, pcm=np.ones(480, dtype=np.float32) * 0.5)
++        sched.push_audio(frame)
++        sched._finalize_utterance("test")
++        self.assertEqual(len(self.events), 1)
++        self.assertEqual(self.events[0].mode, "raw")
++
++    def test_mode_switch_updates_event_provenance(self):
++        sched = self._make_scheduler_and_transcriber()
++        sched.start("s1", 0, mode="raw")
++        frame1 = make_frame(session_id="s1", epoch=0, seq=0,
++                            sample_start=0, captured_ns=0, sample_rate=48000,
++                            valid_samples=480, pcm=np.ones(480, dtype=np.float32) * 0.5)
++        sched.push_audio(frame1)
++        sched._finalize_utterance("test")
++        self.assertEqual(self.events[0].mode, "raw")
++
++        sched.reset("s1", 1, mode="rnnoise")
++        frame2 = make_frame(session_id="s1", epoch=1, seq=1,
++                            sample_start=480, captured_ns=10000000, sample_rate=48000,
++                            valid_samples=480, pcm=np.ones(480, dtype=np.float32) * 0.5)
++        sched.push_audio(frame2)
++        sched._finalize_utterance("test")
++        self.assertEqual(len(self.events), 2)
++        self.assertEqual(self.events[1].mode, "rnnoise")
++        self.assertEqual(self.events[1].epoch, 1)
++
++
+ if __name__ == "__main__":
+     unittest.main()
