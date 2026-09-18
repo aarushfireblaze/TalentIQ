@@ -16,7 +16,7 @@ Required final order: microphone → RNNoise → one explicit 16 kHz resampling 
 |---|---|---|---|
 | Architecture | Interfaces, dependency feasibility, scoped implementation briefs | Complete: `dace574` | No extra approval required for the supplied PRD |
 | M0 | Raw mic, level meter, optional WAV, local ASR and transcript UI | Integrated and independently reviewed; H0 feedback approved | H0 recorded: mic, meter, live transcription, Stop/restart; latency remains unmeasured |
-| M1 | RNNoise wrapper and live mode | Integrated at `dd347f5`; follow-up fixes `9bda8c0`, `3f5cedf`, `b65db6d`, `d0731ba`; native load smoke and 96-test suite pass | H1: compare raw vs RNNoise with fan/typing and primary voice |
+| M1 | RNNoise wrapper and live mode | Integrated at `dd347f5`; follow-up fixes `9bda8c0`, `3f5cedf`, `b65db6d`, `d0731ba`, `eda5c94`; native load smoke and 96-test suite pass | H1: compare raw vs RNNoise with fan/typing and primary voice |
 | M2 | Deterministic Hush offline validation | Pending; may proceed independently after contracts | Evidence of real model inference, sample/frame semantics and output shape |
 | M3–M4 | Streaming Hush and Combined path | Held for earlier checkpoints | H2: near-field voice with distant competing speaker, switch modes live |
 | M5–M6 | Four-mode A/B evaluation and stable UX | Pending | H3: same clips across modes plus 10-minute session |
@@ -46,7 +46,7 @@ Human gates require actual user feedback; automated tests never count as the use
 - H0 gate `gate_150349ca6493` was resolved as passed from the recorded user feedback on 2026-09-18; latency remains unmeasured.
 - M1 task `task_64f8c2de368e` completed in OpenCode MiMo v2.5 child `voice-m1-rnnoise` as `ctx_a7544401b75b`; implementation commit `557fb29` is integrated at `dd347f5`. Follow-up regression fixes are integrated at `9bda8c0` (make `PipelineError` raisable) and `3f5cedf` (remove real-microphone dependency from controller tests). The child handoff is `docs/handoffs/m1-rnnoise.md`. The arm64 RNNoise dylib built from the pinned source, but the bounded ctypes smoke timed out; no real RNNoise filtering claim is made.
 - Antigravity CLI was discovered as `agy`; `agy models` confirms `gemini-3.1-pro-high`. Architecture risk review is now assigned through Orca to Antigravity Pro in its own child worktree (details below).
-- Next: present H1 Raw/RNNoise checkpoint and wait for user feedback. Do not claim RNNoise quality from automated tests alone.
+- Next: present H1 Raw/RNNoise checkpoint and wait for user feedback. The local server is running at `http://127.0.0.1:8765` with RNNoise status Ready. Do not claim RNNoise quality from automated tests alone.
 
 ## Completed preparation
 
