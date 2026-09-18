@@ -37,12 +37,19 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
     except Exception as e:
         hub.publish_error("MODEL_MISSING", "asr", str(e), recoverable=True)
 
-    scheduler = ASRScheduler(transcriber, hub.publish_transcript)
+    controller_ref = [None]
+    def on_transcript(event):
+        if controller_ref[0] is not None:
+            controller_ref[0].add_transcript_event(event)
+        hub.publish_transcript(event)
+
+    scheduler = ASRScheduler(transcriber, on_transcript)
     controller = PipelineControllerImpl(
         source=source, resampler=resampler, transcriber=transcriber,
-        scheduler=scheduler, on_event=hub.publish_transcript, on_level=hub.publish_level,
+        scheduler=scheduler, on_event=on_transcript, on_level=hub.publish_level,
         rnnoise=rnnoise,
     )
+    controller_ref[0] = controller
 
     async def get_state(request: Request) -> JSONResponse:
         snap = controller.snapshot()

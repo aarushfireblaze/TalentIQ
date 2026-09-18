@@ -265,6 +265,114 @@ class TestServiceTranscript(unittest.TestCase):
         data = resp.json()
         self.assertLessEqual(len(data["transcript"]), 1000)
 
+class FakeRNNoise:
+    def __init__(self):
+        self.is_loaded = True
+        self.load_error = None
+        from voice_filtering.audio.rnnoise import RNNoiseMetrics
+        self.metrics = RNNoiseMetrics()
+
+    def process(self, frame):
+        return frame
+
+    def reset(self):
+        pass
+
+from voice_filtering.asr.whisper import ASRScheduler
+original_init = ASRScheduler.__init__
+
+class TestServiceIntegration(unittest.TestCase):
+    @patch('voice_filtering.service.RNNoiseProcessor')
+    @patch('voice_filtering.service.CaptureSource')
+    @patch('voice_filtering.service.WhisperASR')
+    def test_integration_event_routing_and_history(self, mock_asr, mock_source, mock_rnnoise):
+        mock_source.return_value = FakeSource()
+        mock_asr.return_value = FakeTranscriber(["hello integration"])
+        mock_rnnoise.return_value = FakeRNNoise()
+        
+        callback_ref = []
+        def mocked_init(self_obj, transcriber, on_transcript, *args, **kwargs):
+            callback_ref.append(on_transcript)
+            original_init(self_obj, transcriber, on_transcript, *args, **kwargs)
+
+        with patch.object(ASRScheduler, '__init__', mocked_init):
+            app = create_app("dummy")
+            client = TestClient(app)
+            
+            self.assertEqual(len(callback_ref), 1)
+            on_transcript = callback_ref[0]
+            
+            # Start service
+            resp = client.post("/api/start", json={"device_id": "0", "mode": "raw", "record": False})
+            self.assertEqual(resp.status_code, 202)
+            
+            # Subscribe to hub to prove it publishes exactly once
+            hub = app.state.hub
+            client_id = "test-client"
+            buf = hub.subscribe(client_id)
+            
+            try:
+                # Emit event via the configured callback
+                event1 = TranscriptEvent(
+                    session_id="sess1", segment_id="seg1", revision=1, kind="final",
+                    text="hello integration", start_ms=0, end_ms=100, mode="raw",
+                    epoch=0, final_reason="silence"
+                )
+                on_transcript(event1)
+                
+                # 1. Hub published once
+                self.assertEqual(len(buf), 1)
+                hub_event = buf.popleft()
+                self.assertEqual(hub_event["payload"]["text"], "hello integration")
+                
+                # 2. GET state retains accepted event fields
+                resp = client.get("/api/state")
+                state_data = resp.json()
+                self.assertEqual(len(state_data["transcript"]), 1)
+                self.assertEqual(state_data["transcript"][0]["text"], "hello integration")
+                self.assertEqual(state_data["transcript"][0]["mode"], "raw")
+                self.assertEqual(state_data["transcript"][0]["session_id"], "sess1")
+                self.assertEqual(state_data["transcript"][0]["epoch"], 0)
+                
+                # 3. Stop preserves committed history
+                resp = client.post("/api/stop")
+                self.assertEqual(resp.status_code, 200)
+                resp = client.get("/api/state")
+                self.assertEqual(len(resp.json()["transcript"]), 1)
+                
+                # 4. Mode switch preserves committed history
+                resp = client.post("/api/mode", json={"mode": "rnnoise"})
+                self.assertEqual(resp.status_code, 200)
+                resp = client.get("/api/state")
+                self.assertEqual(len(resp.json()["transcript"]), 1)
+                self.assertEqual(resp.json()["transcript"][0]["mode"], "raw")
+                self.assertEqual(resp.json()["transcript"][0]["epoch"], 0)
+                
+                # Start requested rnnoise
+                resp = client.post("/api/start", json={"device_id": "0", "mode": "rnnoise", "record": False})
+                self.assertEqual(resp.status_code, 202)
+                
+                # Emit another event
+                event2 = TranscriptEvent(
+                    session_id="sess2", segment_id="seg2", revision=1, kind="final",
+                    text="new epoch", start_ms=100, end_ms=200, mode="rnnoise",
+                    epoch=1, final_reason="silence"
+                )
+                on_transcript(event2)
+                resp = client.get("/api/state")
+                self.assertEqual(len(resp.json()["transcript"]), 2)
+                self.assertEqual(resp.json()["transcript"][1]["mode"], "rnnoise")
+                
+                # 5. Clear empties history
+                resp = client.post("/api/stop")
+                self.assertEqual(resp.status_code, 200)
+                resp = client.post("/api/transcript/clear")
+                self.assertEqual(resp.status_code, 200)
+                resp = client.get("/api/state")
+                self.assertEqual(len(resp.json()["transcript"]), 0)
+            finally:
+                client.post("/api/stop")
+                hub.unsubscribe(client_id)
 
 if __name__ == "__main__":
     unittest.main()
