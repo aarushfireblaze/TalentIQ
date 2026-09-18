@@ -29,6 +29,7 @@
 
     function init() {
         fetchDevices();
+        fetchState();
         connectSSE();
         startBtn.addEventListener('click', handleStart);
         stopBtn.addEventListener('click', handleStop);
@@ -38,6 +39,16 @@
         document.querySelectorAll('input[name="mode"]').forEach(radio => {
             radio.addEventListener('change', handleModeChange);
         });
+    }
+
+    async function fetchState() {
+        try {
+            const resp = await fetch('/api/state');
+            const snap = await resp.json();
+            applySnapshot(snap);
+        } catch (e) {
+            console.error('Failed to fetch initial state:', e);
+        }
     }
 
     async function fetchDevices() {
