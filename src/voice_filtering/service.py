@@ -49,10 +49,14 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
         hub.publish_transcript(event)
 
     scheduler = ASRScheduler(transcriber, on_transcript)
+    def on_pipeline_error(error: dict) -> None:
+        hub.publish_error(error["code"], error["stage"], error["message"], error["recoverable"])
+        hub.publish_state("error", controller._session_id, controller._epoch)
+
     controller = PipelineControllerImpl(
         source=source, resampler=resampler, transcriber=transcriber,
         scheduler=scheduler, on_event=on_transcript, on_level=hub.publish_level,
-        rnnoise=rnnoise, hush=hush,
+        rnnoise=rnnoise, hush=hush, on_error=on_pipeline_error,
     )
     controller_ref[0] = controller
 
@@ -79,7 +83,9 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
         if "error" in result:
             status = 409 if result["error"]["code"] in ("INVALID_STATE", "STAGE_UNAVAILABLE", "INVALID_MODE") else 422
             return JSONResponse(result, status_code=status)
-        hub.publish_state("listening", controller._session_id, controller._epoch)
+        if result["state"] == "error":
+            return JSONResponse(result, status_code=409)
+        hub.publish_state(result["state"], controller._session_id, controller._epoch)
         return JSONResponse(result, status_code=202)
 
     async def post_stop(request: Request) -> JSONResponse:

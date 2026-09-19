@@ -33,6 +33,9 @@
     const hushStatusEl = document.getElementById('hushStatus');
     const hushInfoEl = document.getElementById('hushInfo');
     const hushMetricsEl = document.getElementById('hushMetrics');
+    const combinedRadio = document.getElementById('combinedRadio');
+    const combinedLabel = document.getElementById('combinedLabel');
+    const combinedStatusEl = document.getElementById('combinedStatus');
     const metricsSection = document.getElementById('metricsSection');
     const rawLabel = document.getElementById('rawLabel');
     const rawStatus = document.getElementById('rawStatus');
@@ -127,7 +130,7 @@
                 handleTranscriptEvent(event.payload);
                 break;
             case 'error':
-                showError(event.payload.message);
+                showError(event.payload.stage + ': ' + event.payload.message);
                 break;
         }
     }
@@ -191,6 +194,18 @@
                     hushStatusEl.className = 'mode-status unavailable';
                 }
             }
+            const rn = snap.stages.rnnoise;
+            const hu = snap.stages.hush;
+            if (rn && hu) {
+                const unavailable = [rn, hu].filter(stage => stage.status !== 'ready' && stage.status !== 'active');
+                combinedRadio.disabled = unavailable.length > 0;
+                combinedLabel.classList.toggle('disabled', combinedRadio.disabled);
+                if (unavailable.length > 0) {
+                    const missing = rn.status !== 'ready' && rn.status !== 'active' ? 'RNNoise' : 'Hush';
+                    combinedStatusEl.textContent = missing + ': ' + (unavailable[0].reason || unavailable[0].status);
+                    combinedStatusEl.className = 'mode-status unavailable';
+                }
+            }
         }
 
         if (snap.metrics) {
@@ -224,6 +239,7 @@
         }
 
         updateButtons();
+        if (snap.last_error) showError(snap.last_error.stage + ': ' + snap.last_error.message);
     }
 
     function updateStatus(state) {
@@ -249,46 +265,23 @@
 
     function updateModeSelection() {
         const isListening = currentState === 'listening';
-        if (currentMode === 'raw') {
-            rawLabel.classList.add('active');
-            rawLabel.classList.remove('disabled');
-            rawStatus.textContent = isListening ? 'Processing' : 'Selected';
-            rawStatus.className = 'mode-status active';
-            rnnoiseLabel.classList.remove('active');
-            if (!rnnoiseRadio.disabled) {
-                rnnoiseStatusEl.textContent = 'Available';
-                rnnoiseStatusEl.className = 'mode-status';
+        const modes = {
+            raw: [rawLabel, rawStatus, null],
+            rnnoise: [rnnoiseLabel, rnnoiseStatusEl, rnnoiseRadio],
+            hush: [hushLabel, hushStatusEl, hushRadio],
+            combined: [combinedLabel, combinedStatusEl, combinedRadio]
+        };
+        Object.entries(modes).forEach(([mode, [label, status, radio]]) => {
+            const active = mode === currentMode;
+            label.classList.toggle('active', active);
+            if (active) {
+                status.textContent = isListening ? 'Processing' : 'Selected';
+                status.className = 'mode-status active';
+            } else if (!radio || !radio.disabled) {
+                status.textContent = 'Available';
+                status.className = 'mode-status';
             }
-            hushLabel.classList.remove('active');
-            if (!hushRadio.disabled) {
-                hushStatusEl.textContent = 'Available';
-                hushStatusEl.className = 'mode-status';
-            }
-        } else if (currentMode === 'rnnoise') {
-            rnnoiseLabel.classList.add('active');
-            rnnoiseStatusEl.textContent = isListening ? 'Processing' : 'Selected';
-            rnnoiseStatusEl.className = 'mode-status active';
-            rawLabel.classList.remove('active');
-            rawStatus.textContent = 'Available';
-            rawStatus.className = 'mode-status';
-            hushLabel.classList.remove('active');
-            if (!hushRadio.disabled) {
-                hushStatusEl.textContent = 'Available';
-                hushStatusEl.className = 'mode-status';
-            }
-        } else if (currentMode === 'hush') {
-            hushLabel.classList.add('active');
-            hushStatusEl.textContent = isListening ? 'Processing' : 'Selected';
-            hushStatusEl.className = 'mode-status active';
-            rawLabel.classList.remove('active');
-            rawStatus.textContent = 'Available';
-            rawStatus.className = 'mode-status';
-            rnnoiseLabel.classList.remove('active');
-            if (!rnnoiseRadio.disabled) {
-                rnnoiseStatusEl.textContent = 'Available';
-                rnnoiseStatusEl.className = 'mode-status';
-            }
-        }
+        });
     }
 
     function updatePendingMode(pending) {
@@ -305,6 +298,10 @@
             hushLabel.classList.remove('active');
             hushStatusEl.textContent = 'Switching...';
             hushStatusEl.className = 'mode-status';
+        } else if (pending === 'combined') {
+            combinedLabel.classList.remove('active');
+            combinedStatusEl.textContent = 'Switching...';
+            combinedStatusEl.className = 'mode-status';
         }
     }
 

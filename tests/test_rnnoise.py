@@ -500,7 +500,7 @@ class TestModeProvenance(unittest.TestCase):
     def _silence_frames(self, count, session_id="s1", epoch=0, start_seq=100):
         """Generate count frames below threshold (amplitude 0.0)."""
         return [
-            self._make_16k_frame(session_id=session_id, epoch=0,
+            self._make_16k_frame(session_id=session_id, epoch=epoch,
                                  seq=start_seq + i, amplitude=0.0)
             for i in range(count)
         ]
@@ -551,7 +551,7 @@ class TestModeProvenance(unittest.TestCase):
 
         sched.reset("s1", 1, mode="rnnoise")
         self._feed_and_step(sched, self._speech_frames(5, epoch=1, start_seq=10))
-        self._feed_and_step(sched, self._silence_frames(60, start_seq=110))
+        self._feed_and_step(sched, self._silence_frames(60, epoch=1, start_seq=110))
         self.assertEqual(len(self.events), 2)
         self.assertEqual(self.events[1].mode, "rnnoise")
         self.assertEqual(self.events[1].epoch, 1)
@@ -579,7 +579,7 @@ class TestModeProvenance(unittest.TestCase):
         self.assertEqual(len(self.events), 0)
 
         self._feed_and_step(sched, self._speech_frames(5, epoch=1, start_seq=10))
-        self._feed_and_step(sched, self._silence_frames(60, start_seq=110))
+        self._feed_and_step(sched, self._silence_frames(60, epoch=1, start_seq=110))
         self.assertEqual(len(self.events), 1)
         self.assertEqual(self.events[0].mode, "rnnoise")
         self.assertEqual(self.events[0].epoch, 1)

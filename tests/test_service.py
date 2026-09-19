@@ -278,6 +278,79 @@ class FakeRNNoise:
     def reset(self):
         pass
 
+
+class FakeHush:
+    def __init__(self):
+        self.is_loaded = True
+        self.load_error = None
+        from voice_filtering.audio.hush import HushMetrics
+        self.metrics = HushMetrics()
+
+    def reset(self):
+        pass
+
+    def process(self, frame):
+        return frame
+
+
+class TestCombinedService(unittest.TestCase):
+    @patch('voice_filtering.service.HushProcessor')
+    @patch('voice_filtering.service.RNNoiseProcessor')
+    @patch('voice_filtering.service.CaptureSource')
+    @patch('voice_filtering.service.WhisperASR')
+    def test_start_capture_error_is_not_reported_as_listening(self, mock_asr, mock_source, mock_rnnoise, mock_hush):
+        source = FakeSource()
+        source.start = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("device denied"))
+        mock_source.return_value = source
+        mock_asr.return_value = FakeTranscriber()
+        mock_rnnoise.return_value = FakeRNNoise()
+        mock_hush.return_value = FakeHush()
+        app = create_app("dummy")
+        client = TestClient(app)
+        reply = client.post('/api/start', json={"mode": "combined"})
+        self.assertEqual(reply.status_code, 409)
+        self.assertEqual(reply.json()["state"], "error")
+        self.assertEqual(reply.json()["last_error"]["stage"], "capture")
+
+    @patch('voice_filtering.service.HushProcessor')
+    @patch('voice_filtering.service.RNNoiseProcessor')
+    @patch('voice_filtering.service.CaptureSource')
+    @patch('voice_filtering.service.WhisperASR')
+    def test_combined_api_and_runtime_failure_event(self, mock_asr, mock_source, mock_rnnoise, mock_hush):
+        mock_source.return_value = FakeSource()
+        mock_asr.return_value = FakeTranscriber()
+        mock_rnnoise.return_value = FakeRNNoise()
+        mock_hush.return_value = FakeHush()
+        app = create_app("dummy")
+        client = TestClient(app)
+        reply = client.post('/api/start', json={"device_id": "0", "mode": "combined", "record": False})
+        self.assertEqual(reply.status_code, 202)
+        self.assertEqual(reply.json()["stages"]["rnnoise"]["status"], "active")
+        self.assertEqual(reply.json()["stages"]["hush"]["status"], "active")
+        events = app.state.hub.subscribe("test")
+        app.state.controller._stage_failed("hush", "native inference failed")
+        self.assertTrue(any(event["type"] == "error" and event["payload"]["stage"] == "hush" for event in events))
+        self.assertEqual(client.get('/api/state').json()["last_error"]["stage"], "hush")
+        client.post('/api/stop')
+
+    @patch('voice_filtering.service.HushProcessor')
+    @patch('voice_filtering.service.RNNoiseProcessor')
+    @patch('voice_filtering.service.CaptureSource')
+    @patch('voice_filtering.service.WhisperASR')
+    def test_combined_start_rejects_missing_hush(self, mock_asr, mock_source, mock_rnnoise, mock_hush):
+        mock_source.return_value = FakeSource()
+        mock_asr.return_value = FakeTranscriber()
+        mock_rnnoise.return_value = FakeRNNoise()
+        hush = FakeHush()
+        hush.is_loaded = False
+        hush.load_error = "model missing"
+        mock_hush.return_value = hush
+        app = create_app("dummy")
+        reply = TestClient(app).post('/api/start', json={"mode": "combined"})
+        self.assertEqual(reply.status_code, 409)
+        self.assertEqual(reply.json()["error"]["stage"], "hush")
+        self.assertEqual(app.state.controller.snapshot()["state"], "idle")
+
 from voice_filtering.asr.whisper import ASRScheduler
 original_init = ASRScheduler.__init__
 

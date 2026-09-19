@@ -124,6 +124,7 @@ class TestPipelineControllerModes(unittest.TestCase):
     def test_switch_to_combined_rejected(self):
         result = self.controller.switch_mode("combined")
         self.assertIn("error", result)
+        self.assertEqual(result["error"]["stage"], "rnnoise")
 
     def test_raw_mode_accepted(self):
         result = self.controller.switch_mode("raw")
@@ -139,6 +140,146 @@ class TestPipelineControllerModes(unittest.TestCase):
         result = self.controller.switch_mode("hush")
         self.assertNotIn("error", result)
 
+
+class TestCombinedPipeline(unittest.TestCase):
+    def setUp(self):
+        self.calls = []
+
+        class Stage:
+            is_loaded = True
+            load_error = None
+            metrics = type("Metrics", (), {"avg_ms": 1.0, "p95_ms": 1.0, "total_frames": 1})()
+
+            def __init__(self, name, calls):
+                self.name = name
+                self.calls = calls
+                self.fail = False
+                self.fail_reset = False
+                self.reset_count = 0
+
+            def reset(self):
+                if self.fail_reset:
+                    raise RuntimeError(f"{self.name} reset failed")
+                self.reset_count += 1
+
+            def process(self, frame):
+                if self.fail:
+                    raise RuntimeError(f"{self.name} failed")
+                self.calls.append((self.name, frame.sample_rate, frame.epoch, frame.session_id))
+                return frame
+
+        class Resampler:
+            def __init__(self, calls):
+                self.calls = calls
+                self.reset_count = 0
+
+            def reset(self):
+                self.reset_count += 1
+
+            def push(self, frame):
+                self.calls.append(("resample", frame.sample_rate, frame.epoch, frame.session_id))
+                return [AudioFrame(**{**frame.__dict__, "sample_rate": 16000,
+                                      "pcm": frame.pcm[:160].copy(), "valid_samples": 160})]
+
+            def finish(self):
+                return []
+
+        class Scheduler:
+            def __init__(self, calls):
+                self.calls = calls
+                self.frames = []
+                self.mode = None
+
+            def start(self, session, epoch, mode):
+                self.mode = mode
+
+            def reset(self, session, epoch, mode):
+                self.mode = mode
+
+            def push_audio(self, frame):
+                self.calls.append(("asr", frame.sample_rate, frame.epoch, frame.session_id))
+                self.frames.append(frame)
+
+            def run_step(self):
+                pass
+
+            def finish(self, timeout_s):
+                return True
+
+        self.rnnoise = Stage("rnnoise", self.calls)
+        self.hush = Stage("hush", self.calls)
+        self.resampler = Resampler(self.calls)
+        self.scheduler = Scheduler(self.calls)
+        self.controller = PipelineControllerImpl(
+            source=FakeSource(), resampler=self.resampler,
+            transcriber=FakeTranscriber(), scheduler=self.scheduler,
+            on_event=lambda event: None, rnnoise=self.rnnoise, hush=self.hush,
+        )
+
+    def make_capture_frame(self):
+        frame = make_frame(valid_samples=480)
+        return AudioFrame(**{**frame.__dict__, "sample_rate": 48000})
+
+    def test_combined_order_one_resampling_boundary_and_provenance(self):
+        self.controller.start("0", "combined", False)
+        self.assertTrue(self.controller._capture_loop_body(self.make_capture_frame()))
+        self.assertEqual([(name, rate) for name, rate, _, _ in self.calls], [
+            ("rnnoise", 48000), ("resample", 48000), ("hush", 16000), ("asr", 16000)
+        ])
+        self.assertEqual(self.scheduler.mode, "combined")
+        self.assertEqual(self.scheduler.frames[0].session_id, self.controller.snapshot()["session_id"])
+        self.assertEqual(self.scheduler.frames[0].epoch, 0)
+        self.assertEqual(self.controller.snapshot()["stages"]["rnnoise"]["status"], "active")
+        self.assertEqual(self.controller.snapshot()["stages"]["hush"]["status"], "active")
+        self.controller.stop()
+
+    def test_combined_rejects_missing_hush_without_starting_capture(self):
+        self.hush.is_loaded = False
+        self.hush.load_error = "model missing"
+        result = self.controller.start("0", "combined", False)
+        self.assertEqual(result["error"]["stage"], "hush")
+        self.assertEqual(self.controller.snapshot()["state"], "idle")
+
+    def test_combined_hush_failure_stops_without_raw_fallback(self):
+        self.controller.start("0", "combined", False)
+        self.hush.fail = True
+        self.assertFalse(self.controller._capture_loop_body(self.make_capture_frame()))
+        snap = self.controller.snapshot()
+        self.assertEqual(snap["state"], "error")
+        self.assertEqual(snap["mode"], "combined")
+        self.assertEqual(snap["last_error"]["stage"], "hush")
+        self.assertEqual(self.scheduler.frames, [])
+        self.controller.stop()
+
+    def test_mode_switch_resets_both_stages_and_preserves_epoch(self):
+        self.controller.start("0", "raw", False)
+        self.controller.switch_mode("combined")
+        self.assertTrue(self.controller._capture_loop_body(self.make_capture_frame()))
+        self.assertEqual(self.scheduler.frames[-1].epoch, 1)
+        self.assertEqual(self.scheduler.mode, "combined")
+        self.assertGreaterEqual(self.rnnoise.reset_count, 2)
+        self.assertGreaterEqual(self.hush.reset_count, 2)
+        self.assertEqual(self.controller.snapshot()["pending_mode"], None)
+        self.controller.stop()
+
+    def test_combined_switch_reset_failure_surfaces_stage_error(self):
+        self.controller.start("0", "raw", False)
+        self.controller.switch_mode("combined")
+        self.hush.fail_reset = True
+        self.assertFalse(self.controller._capture_loop_body(self.make_capture_frame()))
+        snap = self.controller.snapshot()
+        self.assertEqual(snap["state"], "error")
+        self.assertEqual(snap["last_error"]["stage"], "hush")
+        self.assertEqual(self.scheduler.frames, [])
+        self.controller.stop()
+
+    def test_combined_start_reset_failure_names_hush(self):
+        self.hush.fail_reset = True
+        snap = self.controller.start("0", "combined", False)
+        self.assertEqual(snap["state"], "error")
+        self.assertEqual(snap["last_error"]["stage"], "hush")
+        self.assertEqual(self.scheduler.frames, [])
+        self.controller.stop()
 
 class TestPipelineControllerTranscript(unittest.TestCase):
     def setUp(self):
