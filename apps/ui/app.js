@@ -417,6 +417,7 @@
             const data = await resp.json();
             if (data.error) {
                 showError(data.error.message);
+                e.target.checked = false;
                 currentMode = lastConfirmedMode;
                 document.querySelectorAll('input[name="mode"]').forEach(r => {
                     if (r.value === currentMode) r.checked = true;

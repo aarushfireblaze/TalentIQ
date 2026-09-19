@@ -322,5 +322,137 @@ class TestASREdgeCases(unittest.TestCase):
         self.assertEqual(len(finals), 0)
 
 
+class BlockingTranscriber:
+    def __init__(self):
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def decode(self, pcm):
+        self.entered.set()
+        if not self.release.wait(3):
+            raise TimeoutError("decode release was not signaled")
+        return "decoded"
+
+
+class TestASRProvenance(unittest.TestCase):
+    def test_accepted_callback_can_reset_without_deadlock(self):
+        events = []
+        scheduler = ASRScheduler(FakeTranscriber(["accepted"]), lambda event: None)
+
+        def on_event(event):
+            events.append(event)
+            scheduler.reset("session", 1, "rnnoise")
+
+        scheduler._on_event = on_event
+        scheduler.start("session", 0, "raw")
+        scheduler.push_audio(make_audio_frame(session_id="session", epoch=0, amplitude=0.8))
+        scheduler.run_step()
+        worker = threading.Thread(target=scheduler.finish, daemon=True)
+        worker.start()
+        worker.join(1)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual([(e.epoch, e.mode, e.text) for e in events], [(0, "raw", "accepted")])
+
+    def test_reset_with_same_identity_discards_drained_frames(self):
+        entered = threading.Event()
+        release = threading.Event()
+        events = []
+        scheduler = ASRScheduler(FakeTranscriber(["fresh"]), events.append)
+        original_rms = scheduler._rms_dbfs
+
+        def blocking_rms(pcm):
+            entered.set()
+            self.assertTrue(release.wait(3))
+            return original_rms(pcm)
+
+        scheduler._rms_dbfs = blocking_rms
+        scheduler.start("session", 0)
+        scheduler.push_audio(make_audio_frame(session_id="session", epoch=0, amplitude=0.8))
+        worker = threading.Thread(target=scheduler.run_step)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(1))
+            scheduler.reset("session", 0)
+            release.set()
+            worker.join(1)
+            self.assertFalse(worker.is_alive())
+            scheduler.finish()
+            self.assertEqual(events, [])
+        finally:
+            release.set()
+            worker.join(1)
+
+    def test_reset_during_decode_rejects_old_result_and_accepts_new_audio(self):
+        transcriber = BlockingTranscriber()
+        events = []
+        scheduler = ASRScheduler(transcriber, events.append)
+        scheduler.start("session", 0, "rnnoise")
+        scheduler.push_audio(make_audio_frame(session_id="session", epoch=0, amplitude=0.8))
+        scheduler.run_step()
+        worker = threading.Thread(target=scheduler.finish)
+        worker.start()
+        try:
+            self.assertTrue(transcriber.entered.wait(1))
+            scheduler.reset("session", 1, "raw")
+            scheduler.start("session", 1, "raw")
+            scheduler.push_audio(make_audio_frame(session_id="session", epoch=1, amplitude=0.8))
+            transcriber.release.set()
+            worker.join(1)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(events, [])
+            scheduler.run_step()
+            scheduler.finish()
+            self.assertEqual([(e.text, e.epoch, e.mode) for e in events], [("decoded", 1, "raw")])
+        finally:
+            transcriber.release.set()
+            worker.join(1)
+
+    def test_reset_rejects_drained_old_frames_and_mixed_ingress(self):
+        entered = threading.Event()
+        release = threading.Event()
+        events = []
+        scheduler = ASRScheduler(FakeTranscriber(["fresh"]), events.append)
+        original_rms = scheduler._rms_dbfs
+
+        def blocking_rms(pcm):
+            entered.set()
+            self.assertTrue(release.wait(3))
+            return original_rms(pcm)
+
+        scheduler._rms_dbfs = blocking_rms
+        scheduler.start("old", 0)
+        scheduler.push_audio(make_audio_frame(session_id="old", epoch=0, amplitude=0.8))
+        worker = threading.Thread(target=scheduler.run_step)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(1))
+            scheduler.reset("new", 1, "rnnoise")
+            scheduler.push_audio(make_audio_frame(session_id="old", epoch=0, amplitude=0.8))
+            scheduler.push_audio(make_audio_frame(session_id="new", epoch=1, sample_start=160, amplitude=0.8))
+            release.set()
+            worker.join(1)
+            self.assertFalse(worker.is_alive())
+            scheduler.run_step()
+            scheduler.finish()
+            self.assertEqual([(e.session_id, e.epoch, e.mode) for e in events],
+                             [("new", 1, "rnnoise")])
+            self.assertAlmostEqual(events[0].start_ms, 160 * 1000 / 48000)
+        finally:
+            release.set()
+            worker.join(1)
+
+    def test_finish_uses_first_frame_time_and_valid_sample_duration(self):
+        events = []
+        scheduler = ASRScheduler(FakeTranscriber(["short"]), events.append)
+        scheduler.start("session", 2, "raw")
+        scheduler.push_audio(make_audio_frame(session_id="session", epoch=2, sample_start=320,
+                                              valid_samples=80, amplitude=0.8))
+        scheduler.run_step()
+        scheduler.finish()
+        self.assertEqual(len(events), 1)
+        self.assertAlmostEqual(events[0].start_ms, 320 * 1000 / 48000)
+        self.assertAlmostEqual(events[0].end_ms, 320 * 1000 / 48000 + 5)
+
+
 if __name__ == "__main__":
     unittest.main()
