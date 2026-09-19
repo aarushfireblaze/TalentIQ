@@ -1,6 +1,6 @@
 # Acceptance Plan — Handoff Document
 
-Status: **NOT RUN**
+Status at time of writing: **NOT RUN**. See [progress.md](../../progress.md) for current milestone status.
 Owner: acceptance/checkpoint documentation worker; reconciled against architecture contract v1
 Created: 2026-09-17
 
@@ -32,7 +32,7 @@ H2 → M5 evaluator + M6 UX/stability → H3
 H3 → M7 final acceptance
 ```
 
-**H2 requires both M3 and M4 implemented; M4 cannot follow H2.** Minimal same-recorded-input replay/evidence is needed at H1/H2 before the full M5 evaluator. The coordinator may independently authorize offline M2 preparation without releasing dependent human gates. All product tests remain **NOT RUN**; documentation reconciliation proves no milestone implementation.
+**H2 requires both M3 and M4 implemented; M4 cannot follow H2.** Minimal same-recorded-input replay/evidence is needed at H1/H2 before the full M5 evaluator. Offline M2 preparation may be assigned separately without releasing dependent human gates. At the time of this documentation handoff, all product tests were **NOT RUN**; documentation reconciliation alone proved no milestone implementation.
 
 **Human gates require actual user feedback.** Automated tests never count as the user trying the product.
 

@@ -1,12 +1,12 @@
 # H0 — Baseline Checkpoint: Raw Mic + Live ASR
 
-Status: **NOT RUN**
+Status: **APPROVED from user feedback on 2026-09-18**. Tables below preserve their original pre-implementation plan status; see [progress.md](../../progress.md) for current evidence.
 Depends on: M0 implementation and independent specification/code-quality review
-Blocks: M1 and later human checkpoints; coordinator may independently authorize offline M2 preparation
+Blocks: M1 and later human checkpoints until human H0 feedback is recorded; offline M2 preparation may be assigned separately
 
 ## 1. Objective and Evidence Boundary
 
-Establish the raw microphone → 48 kHz PCM → stateful 16 kHz conversion → local CPU ASR → live transcript baseline through actual human feedback. Architecture contract v1 and the M0 plan prescribe this behavior; this document does not assert that M0 exists or works. All product tests below remain **NOT RUN**. No microphone access, installs, model inference or application launch occurred during this reconciliation.
+Establish the raw microphone → 48 kHz PCM → stateful 16 kHz conversion → local CPU ASR → live transcript baseline through actual human feedback. Architecture contract v1 and the M0 plan prescribe this behavior. At the time this script was written, M0 had not been demonstrated and the planned tests below were **NOT RUN**. No microphone access, installs, model inference or application launch occurred during that documentation task. Later human feedback approved H0; see the feedback record and current progress.
 
 ## 2. What H0 Validates
 
@@ -20,9 +20,9 @@ Establish the raw microphone → 48 kHz PCM → stateful 16 kHz conversion → l
 | FR-09 | Optional development raw/ASR-input recording only | NOT RUN |
 | P-01 / P-06 | Measured live delay against ≤1.5 s target; CPU-only operation | NOT RUN |
 
-## 3. Prescribed Launch — NOT YET VERIFIED
+## 3. Prescribed Launch — Unverified When Written
 
-These exact commands are copied from [the M0 plan](../plans/m0-baseline.md#human-checkpoint-h0-coordinator-presents-after-review). They describe the required implemented interface, **not commands verified to work**. Run only in an implementation checkout containing the prescribed files and after the coordinator presents H0. The eventual implementation README/handoff must record actual setup evidence and any reviewed deviations.
+These exact commands are copied from [the M0 plan](../plans/m0-baseline.md#human-checkpoint-h0). They describe the required implemented interface, **not commands verified to work during the original planning task**. Run only in an implementation checkout containing the prescribed files. The implementation README/handoff must record actual setup evidence and any reviewed deviations.
 
 ```bash
 python3 -m venv .venv
@@ -87,7 +87,7 @@ HF_HUB_OFFLINE=1 .venv/bin/python scripts/smoke_asr.py \
 
 ## 6. Pass Criteria and Limitations
 
-Actual human feedback must establish selected-device capture after Start, live transcription, honest disabled filter modes/errors, clean Stop/restart, retained text, Copy and idle-only Clear. Record latency against the PRD ≤1.5 s target and report any miss to the coordinator; do not convert an unmeasured target into a pass. Zero dropped frames is aspirational: the PRD defines no binding numeric drop threshold, but requires instrumentation and later stability evidence.
+Actual human feedback must establish selected-device capture after Start, live transcription, honest disabled filter modes/errors, clean Stop/restart, retained text, Copy and idle-only Clear. Record latency against the PRD ≤1.5 s target and report any miss in `progress.md`; do not convert an unmeasured target into a pass. Zero dropped frames is aspirational: the PRD defines no binding numeric drop threshold, but requires instrumentation and later stability evidence.
 
 Raw includes no application filtering, though hardware/OS microphone processing may still apply; record the selected OS microphone mode. Raw is resampled once before ASR. ASR uses repeated bounded-window decoding, not native streaming Whisper; errors and delays remain empirical. H0 cannot establish filtering, the full four-mode contract, or T1–T6 acceptance. Background/noise transcription errors are baseline observations, not proof that later filters work.
 

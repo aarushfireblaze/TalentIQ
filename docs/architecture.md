@@ -1,6 +1,6 @@
 # Voice Filtering MVP architecture
 
-Contract version: 1. Researched 2026-09-17. Authority: the complete [PRD](requirements/Voice_Filtering_System_PRD.txt) and coordinator-owned [progress](../progress.md). The PRD is approved; this is an implementation contract, not a new approval gate. M0 implements only the raw baseline. No filtering, microphone capture, package installation, or model inference was performed during this architecture task.
+Contract version: 1. Researched 2026-09-17. Authority: the complete [PRD](requirements/Voice_Filtering_System_PRD.txt) and current [progress](../progress.md). The PRD is approved; this is an implementation contract, not a new approval gate. M0 implements only the raw baseline. No filtering, microphone capture, package installation, or model inference was performed during this architecture task.
 
 ## Stack and capture decision
 

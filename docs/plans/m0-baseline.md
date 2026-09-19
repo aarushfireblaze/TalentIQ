@@ -1,6 +1,6 @@
 # Voice Filtering M0 Baseline Implementation Plan
 
-> **For agentic workers:** Use `superpowers:executing-plans` for this assigned milestone. Do not spawn workers. The approved PRD authorizes implementation; do not ask for another design approval. The coordinator dispatches the implementer in a child worktree and owns review and human checkpoint H0.
+> **Historical M0 plan:** M0 is complete and H0 received human approval. The approved PRD authorized implementation. For new work, follow the manual-worktree rules in `AGENTS.md` and current state in `progress.md`.
 
 **Goal:** Deliver real local microphone → raw level/optional WAV → local Whisper-family ASR → transcript UI, with honest unavailable-filter states.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.13, NumPy 2.5.3, sounddevice 0.5.6, soxr 1.1.0, faster-whisper 1.2.1, CTranslate2 4.8.2, Starlette 1.6.0 and base Uvicorn 0.53.0. Pin model revisions and resolve/freeze transitives inside the project.
 
-**Spec:** `docs/requirements/Voice_Filtering_System_PRD.txt`; `docs/architecture.md`; `progress.md`. Read all three before editing. Coordinator must commit PRD/progress into the main worktree before creating the implementation child; the architecture commit alone does not supply those prerequisites.
+**Spec:** `docs/requirements/Voice_Filtering_System_PRD.txt`; `docs/architecture.md`; `progress.md`. These were the M0 prerequisites. Read the relevant sections before any follow-up edit.
 
 ## Global constraints and ownership
 
@@ -56,7 +56,7 @@ tests/fakes.py
 docs/handoffs/m0-baseline.md
 ```
 
-Generated/gitignored project-local directories: `.venv/`, `.cache/`, `models/`, `artifacts/`, `tests/fixtures/generated/`. Do not commit these or audio/model bytes. Other paths require coordinator ownership assignment. Future wrappers belong in separately assigned paths and must conform to v1 contracts.
+Generated/gitignored project-local directories: `.venv/`, `.cache/`, `models/`, `artifacts/`, `tests/fixtures/generated/`. Do not commit these or audio/model bytes. Assign other paths explicitly before editing. Future wrappers belong in separately assigned paths and must conform to v1 contracts.
 
 ## Task 1: contracts, environment and deterministic audio foundation
 
@@ -141,7 +141,7 @@ Failure to download/load/decode is a reported blocker, not a reason to substitut
 - [ ] On network disconnect disable Start, retain text and say Disconnected; reconnect installs authoritative snapshot. Last subscriber leaving triggers five-second capture stop grace period. Page teardown releases SSE. Confirm Stop releases device before waiting for ASR flush.
 - [ ] Run `.venv/bin/python -m unittest discover -s tests -v` and `.venv/bin/python -m pip check`. Manually inspect the static page without pressing Start; record whether browser inspection was performed or unavailable. No screenshot/testing claim without actual observation.
 - [ ] Write README and handoff with exact install/setup/run commands, expected URL, candidate versus validated version differences, automated test results, real ASR smoke evidence path, UI inspection evidence, remaining H0 items and filter unavailability. `docs/handoffs/m0-baseline.md` also holds a blank H0 feedback section; only actual human feedback can fill it.
-- [ ] Commit only owned paths after checking `git diff --check` and the staged path list. Deliver the commit, exact commands/results and limitations to the coordinator. Do not edit `progress.md` or begin M1.
+- [ ] Commit only owned paths after checking `git diff --check` and the staged path list. Report the commit, exact commands/results and limitations to the user. Do not edit `progress.md` or begin M1 without a separate assignment.
 
 ## Observable acceptance matrix
 
@@ -153,9 +153,9 @@ Failure to download/load/decode is a reported blocker, not a reason to substitut
 | Pinned-model JFK smoke | Real CTranslate2 loads locally, decodes known speech, records output/timing/revision | Live latency, microphone permission, competing-speaker suppression |
 | H0 by human | Correct device/permission, level, live transcription, Stop/restart, Copy/Clear experience | Completion of filtering milestones or T1–T6 |
 
-M0 should report partial delay measurements without relaxing the PRD's ≤1.5 s goal. If slower, deliver the actual measurement and constraint; coordinator decides follow-up. A synthetic 10-minute queue test is useful boundedness evidence, but does not satisfy the final live ten-minute test.
+M0 should report partial delay measurements without relaxing the PRD's ≤1.5 s goal. If slower, record the actual measurement and constraint for follow-up. A synthetic 10-minute queue test is useful boundedness evidence, but does not satisfy the final live ten-minute test.
 
-## Human checkpoint H0 (coordinator presents after review)
+## Human checkpoint H0
 
 These commands are the required implemented interface, not commands that worked during the architecture task. From the implementation checkout containing the committed prerequisites:
 
@@ -177,4 +177,4 @@ Open `http://127.0.0.1:8765` in the laptop browser. Recording is off. The human 
 5. Starts again and speaks a different phrase. Checks no old partial appears and no duplicate final appears. Stops before changing device; if another device exists, repeats with that selection.
 6. Optionally tests a short saved WAV by restarting with `--dev-recording` and explicitly enabling recording in the UI. No opt-in is required to complete the basic H0 experience. Files must show correct raw/ASR rates and no invented filtered outputs.
 
-Coordinator records date, host/device, commit, model revision, permission outcome, actual transcript/latency notes, Stop/restart and Copy/Clear behavior, errors, and the human's requested changes in the M0 handoff/progress ledger. H0 remains pending until that feedback is received. M1 waits; offline M2 preparation may be independently authorized by the coordinator.
+Record date, host/device, commit, model revision, permission outcome, actual transcript/latency notes, Stop/restart and Copy/Clear behavior, errors, and the human's requested changes in the M0 handoff/progress ledger. H0 received human approval on 2026-09-18; latency remains unmeasured. Offline M2 preparation requires a separate assignment.

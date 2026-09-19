@@ -1,8 +1,8 @@
 # Checkpoint documentation reconciliation handoff
 
 Date: 2026-09-17
-Documentation reconciliation: complete; every product test remains **NOT RUN**.
-Reconciliation commit: `a0927ecc1850dd2898b7aa699c4881a7a0cbe64b` (`docs: reconcile voice filtering acceptance with architecture`). This report is a subsequent documentation-only commit so it can name the immutable reconciliation commit; integrate both commits.
+Documentation reconciliation: complete; every product test was **NOT RUN** at the time of writing. See [progress.md](../../progress.md) for current milestone status.
+Reconciliation commit: `a0927ecc1850dd2898b7aa699c4881a7a0cbe64b` (`docs: reconcile voice filtering acceptance with architecture`). This report followed in a documentation-only commit so it could name the immutable reconciliation commit. Both commits were later integrated.
 
 ## Scope and findings
 
@@ -74,6 +74,6 @@ PY
 
 ## Remaining work
 
-The coordinator must review/integrate the documentation commits and retain all product statuses as NOT RUN. M0 existence, setup success, real ASR behavior, physical microphone/permission behavior, filter implementation/quality, live latency and T1–T6 results are not established here. Implementation evidence and actual human H0 feedback must precede dependent product work; later checkpoints need real same-recorded-input comparisons and live stability evidence.
+At the time of this handoff, the documentation commits required review and integration, and all product statuses remained NOT RUN. M0 existence, setup success, real ASR behavior, physical microphone/permission behavior, filter implementation/quality, live latency and T1–T6 results were not established by this documentation task. Implementation evidence and actual human H0 feedback were required before dependent product work; later checkpoints need real same-recorded-input comparisons and live stability evidence.
 
-Live Orca lifecycle was used for coordinator checks at file/review checkpoints and heartbeats; completion is reported once through worker_done for the assigned task/dispatch. No messages were sent through Slack, GitHub or another human channel.
+This historical report records documentation checks only. Current task ownership and checkpoints are defined in `AGENTS.md` and `progress.md`.

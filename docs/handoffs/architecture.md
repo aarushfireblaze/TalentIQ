@@ -1,6 +1,6 @@
 # Architecture handoff
 
-Date: 2026-09-17. Assigned task `task_156f3abe0f98`. Scope completed: documentation/contracts and executable M0 brief only. Coordinator has accepted the native-capture/local-SSE choice; no redundant PRD/design approval is needed.
+Date: 2026-09-17. Assigned task `task_156f3abe0f98`. Scope completed: documentation/contracts and executable M0 brief only. The native-capture/local-SSE choice was accepted; no redundant PRD/design approval is needed.
 
 ## Deliverables and next owner
 
@@ -8,7 +8,7 @@ Date: 2026-09-17. Assigned task `task_156f3abe0f98`. Scope completed: documentat
 - [M0 implementation brief](../plans/m0-baseline.md): exact owned paths, three sequential implementation tasks, deterministic tests, pinned real-model smoke, setup/launch commands and H0 human test script. One implementer owns M0; no overlapping application-file owners.
 - This handoff records evidence and constraints. Only these three documentation files belong to this architecture worker.
 
-Coordinator must commit the PRD, text extraction and progress ledger separately before creating a NEW implementation child worktree; all future agents must use child worktrees per the latest coordinator instruction. This existing worker was explicitly allowed to finish in the current main worktree. No push, nested delegation, application edits or progress edits occurred.
+Historical setup note: the PRD, text extraction and progress ledger were committed before implementation began. This document predates the current manual-worktree workflow; use `AGENTS.md` and `progress.md` for active instructions. No push, nested delegation, application edits or progress edits occurred in this architecture task.
 
 ## Decisions the implementer should preserve
 
@@ -20,7 +20,7 @@ Hush future boundary is 16 kHz / 160 samples per call, with a 320-sample STFT wi
 
 ## Exact evidence obtained
 
-1. Read the complete `docs/requirements/Voice_Filtering_System_PRD.txt` (sections 1–18) and `progress.md`. Inspected initial repository/history and live Orca inbox; incorporated coordinator guidance to keep M0 bounded, commit only owned docs, use child worktrees for future workers, and clarify retained transcript identity.
+1. Read the complete `docs/requirements/Voice_Filtering_System_PRD.txt` (sections 1–18) and `progress.md`. Inspected the initial repository/history; kept M0 bounded, committed only owned docs, and clarified retained transcript identity.
 2. Executed `uname -m`, `sw_vers`, `python3 --version`: arm64; macOS 27.0 build 26A428; Python 3.13.2. No microphone stream or device recording was opened.
 3. Queried primary PyPI release JSON for every listed direct/native dependency and checked relevant arm64/universal2 wheel filenames. CTranslate2 4.8.2 has CPython 3.13 arm64; soxr 1.1.0 has compatible abi3 arm64; sounddevice 0.5.6 supplies universal2. Verified setuptools 80.9.0 (Python >=3.9) as the local build backend pin. These are availability checks, **not** a successful install/import/resolution.
 4. Queried Hugging Face model metadata and immutable config/model card/license. Hush revision `a55d932cbf6344d284ac985f21e7f6e5bc4d38a5`, ONNX bundle upstream LFS SHA256 `45632ccaa82b71bb743d6caa7c78e983fe2f2790a3af7f6ec48e6ed7ba085df6`; config confirms 16 kHz/320 FFT/160 hop. Model/source declare Apache 2.0. tiny.en revision `0d3d19a32d3338f10357c0889762bd8d64bbdeba` is declared MIT. The architecture links the exact upstream evidence.
@@ -38,4 +38,4 @@ The M0 implementer must resolve/lock and validate the candidate dependencies, di
 
 M2 must verify Hush binary architecture/linkage/load, checksum the downloaded native artifact, confirm runtime 160-sample frame reporting, measure actual latency/alignment/flush semantics and demonstrate real deterministic WAV inference. Supplied licenses and dependency notices must accompany later redistribution; this was metadata/source inspection, not a full bundled-binary license audit. The loud-interferer/target-speaker limitation remains explicitly accepted in the PRD.
 
-Coordinator presents H0 only after M0 implementation and separate spec/code-quality review, using the plan's exact commands and human script. Await actual user feedback before dependent M1 work; M2 offline preparation can proceed independently if assigned. Keep stub/unit evidence, real-model evidence and manual/live evidence separate in all milestone reports.
+H0 follows M0 implementation and separate spec/code-quality review, using the plan's exact commands and human script. Actual user feedback is required before dependent M1 work; M2 offline preparation can proceed independently if assigned. Keep stub/unit evidence, real-model evidence and manual/live evidence separate in all milestone reports.
