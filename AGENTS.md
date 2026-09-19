@@ -24,22 +24,25 @@ bounded task per agent. Never have two agents edit
 the same files concurrently. Favor Antigravity Pro for coding; use OpenCode
 MiMo v2.5 less for coding. Use Codex only when necessary, with Sol.
 
-Read the current state in `progress.md`, the assigned task, and only relevant
-specification sections. Respect file ownership. Do not merge another branch or
-advance a milestone unless the user explicitly assigns that work.
+Read the current state and assigned task in `progress.md`, plus only relevant
+PRD sections and code. Respect file ownership. Do not edit `progress.md` from a
+task worktree; the user maintains the task board after reviewing evidence. Do
+not merge another branch or advance a milestone unless the user explicitly
+assigns that work.
 
 ## Token discipline
 
-Start one fresh chat in each new task worktree. Use `progress.md`, the assigned
-task, and the relevant diff as the handoff. Send only changed
+Start one fresh chat in each new task worktree. Use `progress.md` and the
+relevant diff as the handoff. Send only changed
 instructions on follow-ups; do not repeat project history. Read only relevant
 files and specification sections. Prefer concise completion reports over
 repeated terminal dumps.
 
-Save detailed evidence in the task handoff file and report its path, commit,
-test result, and blocker. Run focused tests while editing and one full suite
-for the final snapshot. Repeat checks only for new changes, failures, or
-unresolved concerns.
+Report commit, exact test result, evidence path, and blocker in the final chat.
+Store large generated evidence under gitignored `artifacts/`; do not create a
+new Markdown handoff. Run focused tests while editing and one full suite for
+the final snapshot. Repeat checks only for new changes, failures, or unresolved
+concerns.
 
 ## Human checkpoints
 

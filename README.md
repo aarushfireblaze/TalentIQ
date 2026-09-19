@@ -1,6 +1,8 @@
-# Voice Filtering M0 Baseline
+# Voice Filtering MVP
 
-Raw microphone → ASR → transcript UI. No filtering.
+Local microphone → optional RNNoise → ASR → transcript UI. Hush and Combined
+remain future milestones. H1 RNNoise user retest is pending. See
+[`progress.md`](progress.md) for current worktrees and task assignments.
 
 ## Quick Start
 
@@ -15,7 +17,14 @@ HF_HUB_OFFLINE=1 .venv/bin/python -m voice_filtering \
 
 Open http://127.0.0.1:8765 in browser.
 
-## What M0 Delivers
+RNNoise requires a native library built from `xiph/rnnoise` commit
+`70f1d256acd4b34a572f999a05c87bf00b67730d`. Place
+`librnnoise.0.dylib` in the project's `lib/` directory, or set
+`RNNOISE_LIB_PATH` to its absolute path before launch. The library is a local
+build artifact and is not included in this repository. Check stage status in
+the UI; missing or failed native load must show an unavailable/error state.
+
+## Current features
 
 - Real microphone capture at 48 kHz mono
 - Streaming resampling to 16 kHz for ASR
@@ -23,16 +32,17 @@ Open http://127.0.0.1:8765 in browser.
 - Partial and final transcript events via SSE
 - Start/Stop with device selection
 - Copy and Clear transcript
-- Visible unavailable states for RNNoise, Hush, Combined
+- RNNoise-only mode when its native library loads; explicit unavailable status otherwise
+- Visible unavailable states for Hush and Combined
 - Input level meter from real audio
 - Opt-in WAV recording with `--dev-recording`
 
-## What M0 Does NOT Deliver
+## Pending milestones
 
-- RNNoise filtering (M1)
-- Hush speaker suppression (M2-M3)
+- H1 user retest and controlled Raw/RNNoise acoustic comparison
+- Hush speaker suppression (M2–M3)
 - Combined pipeline (M4)
-- Live latency benchmarking (M5-M6)
+- Four-mode evaluation and live stability measurement (M5–M6)
 
 ## Testing
 
@@ -59,7 +69,9 @@ src/voice_filtering/     Application code
 apps/ui/                 Static HTML/CSS/JS frontend
 scripts/                 Model setup and smoke tests
 tests/                   Automated tests
-docs/                    Architecture, plans, handoffs
+docs/requirements/       Approved PRD and searchable text copy
+docs/handoffs/           Saved H1 draft patches; not accepted code
+progress.md              Worktree tasks, checkpoints, current state
 models/                  Downloaded ASR model (gitignored)
 ```
 
