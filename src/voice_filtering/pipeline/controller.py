@@ -137,7 +137,10 @@ class PipelineControllerImpl:
         """Called from capture loop at a frame boundary to apply pending mode."""
         with self._lock:
             pending = self._pending_mode
-            if pending is None or pending == self._mode:
+            if pending is None:
+                return
+            if pending == self._mode:
+                self._pending_mode = None
                 return
             self._pending_mode = None
             self._mode = pending

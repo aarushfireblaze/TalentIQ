@@ -350,6 +350,36 @@ class TestPipelineRNNoiseMode(unittest.TestCase):
         self.assertEqual(snap["state"], "error")
         self.assertEqual(snap["last_error"]["code"], "STAGE_FAILED")
 
+    def test_reselect_same_mode_clears_pending(self):
+        ctrl = self._make_controller(self.rnnoise)
+        ctrl.start("0", "raw", False)
+        time.sleep(0.05)
+        ctrl.switch_mode("raw")
+        snap = ctrl.snapshot()
+        self.assertEqual(snap["pending_mode"], "raw")
+        ctrl._apply_mode_switch()
+        snap2 = ctrl.snapshot()
+        self.assertIsNone(snap2["pending_mode"])
+        self.assertEqual(snap2["mode"], "raw")
+        self.assertEqual(snap2["epoch"], 0)
+        ctrl.stop()
+
+    def test_cancel_queued_switch_selects_current(self):
+        ctrl = self._make_controller(self.rnnoise)
+        ctrl.start("0", "raw", False)
+        time.sleep(0.05)
+        ctrl.switch_mode("rnnoise")
+        snap1 = ctrl.snapshot()
+        self.assertEqual(snap1["pending_mode"], "rnnoise")
+        ctrl.switch_mode("raw")
+        snap2 = ctrl.snapshot()
+        self.assertEqual(snap2["pending_mode"], "raw")
+        ctrl._apply_mode_switch()
+        snap3 = ctrl.snapshot()
+        self.assertEqual(snap3["mode"], "raw")
+        self.assertEqual(snap3["epoch"], 0)
+        ctrl.stop()
+
     def test_clear_rejected_while_listening(self):
         ctrl = self._make_controller(self.rnnoise)
         ctrl.start("0", "raw", False)

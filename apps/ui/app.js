@@ -8,6 +8,8 @@
     let lastConfirmedMode = 'raw';
     let transcript = [];
     let devices = [];
+    let _pendingPollTimer = null;
+    let _pendingPollGeneration = 0;
 
     const statusEl = document.getElementById('status');
     const deviceSelect = document.getElementById('device');
@@ -98,6 +100,7 @@
 
         eventSource.onopen = function() {
             hideError();
+            fetchState();
             if (currentState === 'idle') {
                 startBtn.disabled = false;
             }
@@ -191,6 +194,9 @@
         updateButtons();
         updateModeSelection();
         permissionNotice.style.display = 'none';
+        if (state !== 'listening') {
+            stopPendingPoll();
+        }
     }
 
     function updateButtons() {
@@ -301,6 +307,7 @@
 
     async function handleStart() {
         hideError();
+        stopPendingPoll();
         const deviceId = deviceSelect.value || '0';
         const mode = currentMode || 'raw';
         try {
@@ -330,6 +337,7 @@
     }
 
     async function handleStop() {
+        stopPendingPoll();
         try {
             const resp = await fetch('/api/stop', {
                 method: 'POST',
@@ -409,7 +417,6 @@
             const data = await resp.json();
             if (data.error) {
                 showError(data.error.message);
-                e.target.checked = false;
                 currentMode = lastConfirmedMode;
                 document.querySelectorAll('input[name="mode"]').forEach(r => {
                     if (r.value === currentMode) r.checked = true;
@@ -417,9 +424,70 @@
                 updateModeSelection();
             } else {
                 applySnapshot(data);
+                if (data.pending_mode) {
+                    startPendingPoll();
+                }
             }
-        } catch (e) {
-            showError('Failed to switch mode: ' + e.message);
+        } catch (err) {
+            showError('Failed to switch mode: ' + err.message);
+            currentMode = lastConfirmedMode;
+            document.querySelectorAll('input[name="mode"]').forEach(r => {
+                if (r.value === currentMode) r.checked = true;
+            });
+            updateModeSelection();
+        }
+    }
+
+    function startPendingPoll() {
+        stopPendingPoll();
+        var gen = ++_pendingPollGeneration;
+        var attempts = 0;
+        var maxAttempts = 30;
+        var intervalMs = 300;
+        function poll() {
+            if (gen !== _pendingPollGeneration) return;
+            if (attempts >= maxAttempts || currentState !== 'listening') {
+                currentMode = lastConfirmedMode;
+                document.querySelectorAll('input[name="mode"]').forEach(r => {
+                    if (r.value === currentMode) r.checked = true;
+                });
+                updateModeSelection();
+                return;
+            }
+            attempts++;
+            fetch('/api/state')
+                .then(function(resp) { return resp.json(); })
+                .then(function(snap) {
+                    if (gen !== _pendingPollGeneration) return;
+                    applySnapshot(snap);
+                    if (snap.pending_mode && currentState === 'listening') {
+                        _pendingPollTimer = setTimeout(poll, intervalMs);
+                    } else {
+                        lastConfirmedMode = snap.mode || lastConfirmedMode;
+                        currentMode = lastConfirmedMode;
+                        document.querySelectorAll('input[name="mode"]').forEach(r => {
+                            if (r.value === currentMode) r.checked = true;
+                        });
+                        updateModeSelection();
+                    }
+                })
+                .catch(function() {
+                    if (gen !== _pendingPollGeneration) return;
+                    currentMode = lastConfirmedMode;
+                    document.querySelectorAll('input[name="mode"]').forEach(r => {
+                        if (r.value === currentMode) r.checked = true;
+                    });
+                    updateModeSelection();
+                });
+        }
+        poll();
+    }
+
+    function stopPendingPoll() {
+        _pendingPollGeneration++;
+        if (_pendingPollTimer) {
+            clearTimeout(_pendingPollTimer);
+            _pendingPollTimer = null;
         }
     }
 
