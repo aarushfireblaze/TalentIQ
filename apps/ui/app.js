@@ -28,6 +28,11 @@
     const rnnoiseStatusEl = document.getElementById('rnnoiseStatus');
     const rnnoiseInfoEl = document.getElementById('rnnoiseInfo');
     const rnnoiseMetricsEl = document.getElementById('rnnoiseMetrics');
+    const hushRadio = document.getElementById('hushRadio');
+    const hushLabel = document.getElementById('hushLabel');
+    const hushStatusEl = document.getElementById('hushStatus');
+    const hushInfoEl = document.getElementById('hushInfo');
+    const hushMetricsEl = document.getElementById('hushMetrics');
     const metricsSection = document.getElementById('metricsSection');
     const rawLabel = document.getElementById('rawLabel');
     const rawStatus = document.getElementById('rawStatus');
@@ -162,13 +167,47 @@
                     rnnoiseStatusEl.className = 'mode-status unavailable';
                 }
             }
+            if (snap.stages.hush) {
+                const hu = snap.stages.hush;
+                hushInfoEl.textContent = hu.status;
+                hushInfoEl.className = (hu.status === 'ready' || hu.status === 'active') ? '' : 'unavailable';
+
+                if (hu.status === 'ready' || hu.status === 'active') {
+                    hushRadio.disabled = false;
+                    hushLabel.classList.remove('disabled');
+                    hushStatusEl.textContent = hu.status === 'active' ? 'Processing' : 'Available';
+                    hushStatusEl.className = 'mode-status';
+                } else if (hu.status === 'failed') {
+                    hushRadio.disabled = true;
+                    hushLabel.classList.add('disabled');
+                    hushLabel.classList.remove('active');
+                    hushStatusEl.textContent = 'Failed: ' + (hu.reason || 'unknown');
+                    hushStatusEl.className = 'mode-status unavailable';
+                } else {
+                    hushRadio.disabled = true;
+                    hushLabel.classList.add('disabled');
+                    hushLabel.classList.remove('active');
+                    hushStatusEl.textContent = hu.reason || 'Unavailable';
+                    hushStatusEl.className = 'mode-status unavailable';
+                }
+            }
         }
 
         if (snap.metrics) {
             const m = snap.metrics;
+            let showMetrics = false;
             if (m.rnnoise_avg_ms != null) {
-                metricsSection.style.display = '';
+                showMetrics = true;
                 rnnoiseMetricsEl.textContent = 'avg=' + m.rnnoise_avg_ms.toFixed(2) + 'ms p95=' + (m.rnnoise_p95_ms != null ? m.rnnoise_p95_ms.toFixed(2) : '--') + 'ms frames=' + (m.rnnoise_total_frames || 0);
+            }
+            if (m.hush_avg_ms != null) {
+                showMetrics = true;
+                hushMetricsEl.textContent = 'avg=' + m.hush_avg_ms.toFixed(2) + 'ms p95=' + (m.hush_p95_ms != null ? m.hush_p95_ms.toFixed(2) : '--') + 'ms frames=' + (m.hush_total_frames || 0);
+            }
+            if (showMetrics) {
+                metricsSection.style.display = '';
+            } else {
+                metricsSection.style.display = 'none';
             }
         }
 
@@ -220,6 +259,11 @@
                 rnnoiseStatusEl.textContent = 'Available';
                 rnnoiseStatusEl.className = 'mode-status';
             }
+            hushLabel.classList.remove('active');
+            if (!hushRadio.disabled) {
+                hushStatusEl.textContent = 'Available';
+                hushStatusEl.className = 'mode-status';
+            }
         } else if (currentMode === 'rnnoise') {
             rnnoiseLabel.classList.add('active');
             rnnoiseStatusEl.textContent = isListening ? 'Processing' : 'Selected';
@@ -227,6 +271,23 @@
             rawLabel.classList.remove('active');
             rawStatus.textContent = 'Available';
             rawStatus.className = 'mode-status';
+            hushLabel.classList.remove('active');
+            if (!hushRadio.disabled) {
+                hushStatusEl.textContent = 'Available';
+                hushStatusEl.className = 'mode-status';
+            }
+        } else if (currentMode === 'hush') {
+            hushLabel.classList.add('active');
+            hushStatusEl.textContent = isListening ? 'Processing' : 'Selected';
+            hushStatusEl.className = 'mode-status active';
+            rawLabel.classList.remove('active');
+            rawStatus.textContent = 'Available';
+            rawStatus.className = 'mode-status';
+            rnnoiseLabel.classList.remove('active');
+            if (!rnnoiseRadio.disabled) {
+                rnnoiseStatusEl.textContent = 'Available';
+                rnnoiseStatusEl.className = 'mode-status';
+            }
         }
     }
 
@@ -240,6 +301,10 @@
             rawLabel.classList.remove('active');
             rawStatus.textContent = 'Switching...';
             rawStatus.className = 'mode-status';
+        } else if (pending === 'hush') {
+            hushLabel.classList.remove('active');
+            hushStatusEl.textContent = 'Switching...';
+            hushStatusEl.className = 'mode-status';
         }
     }
 

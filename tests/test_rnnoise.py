@@ -329,7 +329,7 @@ class TestPipelineRNNoiseMode(unittest.TestCase):
 
     def test_invalid_mode_rejected(self):
         ctrl = self._make_controller(self.rnnoise)
-        result = ctrl.switch_mode("hush")
+        result = ctrl.switch_mode("unknown_mode")
         self.assertIn("error", result)
         self.assertEqual(result["error"]["code"], "INVALID_MODE")
 
