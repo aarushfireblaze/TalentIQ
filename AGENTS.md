@@ -30,8 +30,8 @@ advance a milestone unless the user explicitly assigns that work.
 
 ## Token discipline
 
-Start fresh chats in existing worktrees when old chats have become expensive.
-Use the worktree's code and `progress.md` as the handoff. Send only changed
+Start one fresh chat in each new task worktree. Use `progress.md`, the assigned
+task, and the relevant diff as the handoff. Send only changed
 instructions on follow-ups; do not repeat project history. Read only relevant
 files and specification sections. Prefer concise completion reports over
 repeated terminal dumps.
