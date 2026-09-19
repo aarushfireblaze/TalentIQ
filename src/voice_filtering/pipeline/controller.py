@@ -13,7 +13,7 @@ from voice_filtering.audio.capture import CaptureSource, enumerate_devices, get_
 from voice_filtering.audio.resample import StreamingResampler
 from voice_filtering.asr.whisper import WhisperASR, ASRScheduler
 
-_VALID_MODES = ("raw", "rnnoise")
+_VALID_MODES = ("raw", "rnnoise", "hush")
 
 
 class PipelineControllerImpl:
@@ -27,6 +27,7 @@ class PipelineControllerImpl:
         on_level: Callable[[float, float, str, int], None] = lambda r, p, s, e: None,
         clock=time.monotonic,
         rnnoise=None,
+        hush=None,
     ) -> None:
         self._source = source
         self._resampler = resampler
@@ -36,6 +37,7 @@ class PipelineControllerImpl:
         self._on_level = on_level
         self._clock = clock
         self._rnnoise = rnnoise
+        self._hush = hush
         self._state: str = "idle"
         self._session_id: str = ""
         self._epoch: int = 0
@@ -63,6 +65,8 @@ class PipelineControllerImpl:
                 return {"error": {"code": "INVALID_MODE", "stage": "pipeline", "message": f"Mode '{mode}' not supported", "recoverable": False}}
             if mode == "rnnoise" and not self._rnnoise_available():
                 return {"error": {"code": "STAGE_UNAVAILABLE", "stage": "rnnoise", "message": self._rnnoise_unavailable_reason(), "recoverable": False}}
+            if mode == "hush" and not self._hush_available():
+                return {"error": {"code": "STAGE_UNAVAILABLE", "stage": "hush", "message": self._hush_unavailable_reason(), "recoverable": False}}
             if not self._transcriber.is_loaded:
                 return {"error": {"code": "MODEL_MISSING", "stage": "asr", "message": "ASR model not loaded", "recoverable": True}}
             self._session_id = str(uuid.uuid4())
@@ -84,6 +88,8 @@ class PipelineControllerImpl:
             self._resampler.reset()
             if self._rnnoise is not None:
                 self._rnnoise.reset()
+            if self._hush is not None:
+                self._hush.reset()
             self._scheduler.start(self._session_id, self._epoch, self._mode)
             with self._lock:
                 self._state = "listening"
@@ -123,6 +129,8 @@ class PipelineControllerImpl:
                 return {"error": {"code": "INVALID_MODE", "stage": "pipeline", "message": f"Mode '{mode}' not supported", "recoverable": False}}
             if mode == "rnnoise" and not self._rnnoise_available():
                 return {"error": {"code": "STAGE_UNAVAILABLE", "stage": "rnnoise", "message": self._rnnoise_unavailable_reason(), "recoverable": False}}
+            if mode == "hush" and not self._hush_available():
+                return {"error": {"code": "STAGE_UNAVAILABLE", "stage": "hush", "message": self._hush_unavailable_reason(), "recoverable": False}}
             if self._state not in ("listening", "idle"):
                 return {"error": {"code": "INVALID_STATE", "stage": "pipeline", "message": "Can only switch mode while idle or listening", "recoverable": False}}
             if mode == self._mode and self._state == "idle":
@@ -151,6 +159,8 @@ class PipelineControllerImpl:
         self._resampler.reset()
         if self._rnnoise is not None:
             self._rnnoise.reset()
+        if self._hush is not None:
+            self._hush.reset()
 
     def clear_transcript(self) -> dict:
         with self._lock:
@@ -168,6 +178,16 @@ class PipelineControllerImpl:
         if self._rnnoise.load_error:
             return self._rnnoise.load_error
         return "RNNoise not loaded"
+
+    def _hush_available(self) -> bool:
+        return self._hush is not None and self._hush.is_loaded
+
+    def _hush_unavailable_reason(self) -> str:
+        if self._hush is None:
+            return "Hush processor not injected"
+        if self._hush.load_error:
+            return self._hush.load_error
+        return "Hush not loaded"
 
     def _snapshot_locked(self) -> dict:
         if self._rnnoise is not None and self._rnnoise.is_loaded:
@@ -187,6 +207,23 @@ class PipelineControllerImpl:
         if self._rnnoise is not None and self._rnnoise.is_loaded:
             rnnoise_rev = "xiph/rnnoise@70f1d25"
 
+        if self._hush is not None and self._hush.is_loaded:
+            hush_status = (
+                "active" if self._state == "listening" and self._mode == "hush"
+                else "ready"
+            )
+            hush_reason = None
+        elif self._hush is not None and self._hush.load_error:
+            hush_status = "failed"
+            hush_reason = self._hush.load_error
+        else:
+            hush_status = "unavailable"
+            hush_reason = self._hush_unavailable_reason()
+
+        hush_rev = None
+        if self._hush is not None and self._hush.is_loaded:
+            hush_rev = "weya/hush@advanced"
+
         stages = {
             "capture": {
                 "status": "active" if self._state == "listening" else "ready",
@@ -198,7 +235,11 @@ class PipelineControllerImpl:
                 "reason": rnnoise_reason,
                 "model_revision": rnnoise_rev,
             },
-            "hush": {"status": "unavailable", "reason": "Not implemented in M1", "model_revision": None},
+            "hush": {
+                "status": hush_status,
+                "reason": hush_reason,
+                "model_revision": hush_rev,
+            },
             "asr": {
                 "status": "active" if self._state == "listening" else ("ready" if self._transcriber.is_loaded else "unavailable"),
                 "reason": self._transcriber.load_error if not self._transcriber.is_loaded else None,
@@ -212,6 +253,11 @@ class PipelineControllerImpl:
             metrics["rnnoise_avg_ms"] = m.avg_ms
             metrics["rnnoise_p95_ms"] = m.p95_ms
             metrics["rnnoise_total_frames"] = m.total_frames
+        if self._hush is not None and self._hush.is_loaded:
+            m = self._hush.metrics
+            metrics["hush_avg_ms"] = m.avg_ms
+            metrics["hush_p95_ms"] = m.p95_ms
+            metrics["hush_total_frames"] = m.total_frames
         metrics["drop_count"] = self._drop_count
         metrics["gap_count"] = self._gap_count
         metrics["mode_switch_count"] = self._mode_switch_count
@@ -307,6 +353,18 @@ class PipelineControllerImpl:
 
         resampled = self._resampler.push(frame)
         for rframe in resampled:
+            if current_mode == "hush" and self._hush is not None and self._hush.is_loaded:
+                try:
+                    rframe = self._hush.process(rframe)
+                except Exception as e:
+                    with self._lock:
+                        self._last_error = {"code": "STAGE_FAILED", "stage": "hush", "message": str(e), "recoverable": False}
+                    self._running = False
+                    self._capture_stop_event.set()
+                    self._dsp_stop_event.set()
+                    with self._lock:
+                        self._state = "error"
+                    return False
             self._scheduler.push_audio(rframe)
         return True
 

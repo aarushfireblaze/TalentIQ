@@ -45,10 +45,10 @@
                     <span>RNNoise</span>
                     <span class="mode-status" id="rnnoiseStatus">Checking...</span>
                 </label>
-                <label class="mode-label disabled">
-                    <input type="radio" name="mode" value="hush" disabled>
+                <label class="mode-label disabled" id="hushLabel">
+                    <input type="radio" name="mode" value="hush" id="hushRadio" disabled>
                     <span>Hush</span>
-                    <span class="mode-status unavailable">Not implemented in M1</span>
+                    <span class="mode-status unavailable" id="hushStatus">Checking...</span>
                 </label>
                 <label class="mode-label disabled">
                     <input type="radio" name="mode" value="combined" disabled>
@@ -88,11 +88,13 @@
                 </div>
                 <div class="info-item">
                     <label>Hush:</label>
-                    <span class="unavailable">Not implemented in M1</span>
+                    <span id="hushInfo">Checking...</span>
                 </div>
                 <div class="info-item" id="metricsSection" style="display:none;">
                     <label>RNNoise Timing:</label>
-                    <span id="rnnoiseMetrics">--</span>
+                    <span id="rnnoiseMetrics">--</span><br>
+                    <label>Hush Timing:</label>
+                    <span id="hushMetrics">--</span>
                 </div>
             </div>
         </div>

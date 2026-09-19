@@ -129,6 +129,16 @@ class TestPipelineControllerModes(unittest.TestCase):
         result = self.controller.switch_mode("raw")
         self.assertNotIn("error", result)
 
+    def test_switch_to_hush_accepted(self):
+        class FakeHush:
+            is_loaded = True
+            load_error = None
+            metrics = type("Metrics", (), {"avg_ms": 1, "p95_ms": 1, "total_frames": 1})()
+            def reset(self): pass
+        self.controller._hush = FakeHush()
+        result = self.controller.switch_mode("hush")
+        self.assertNotIn("error", result)
+
 
 class TestPipelineControllerTranscript(unittest.TestCase):
     def setUp(self):

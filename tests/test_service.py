@@ -192,7 +192,7 @@ class TestServiceState(unittest.TestCase):
         data = resp.json()
         self.assertIn(data["stages"]["rnnoise"]["status"], ("unavailable", "failed"))
         self.assertEqual(data["stages"]["hush"]["status"], "unavailable")
-        self.assertIn("Not implemented in M1", data["stages"]["hush"]["reason"])
+        self.assertIn("Hush processor not injected", data["stages"]["hush"]["reason"])
 
     def test_mode_raw_accepted(self):
         resp = self.client.post("/api/mode", json={"mode": "raw"})

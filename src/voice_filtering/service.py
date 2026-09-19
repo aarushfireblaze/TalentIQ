@@ -17,6 +17,7 @@ from starlette.routing import Route
 from voice_filtering.audio.capture import CaptureSource, enumerate_devices, get_default_device_id
 from voice_filtering.audio.resample import StreamingResampler
 from voice_filtering.audio.rnnoise import RNNoiseProcessor
+from voice_filtering.audio.hush import HushProcessor
 from voice_filtering.asr.whisper import WhisperASR, ASRScheduler
 from voice_filtering.pipeline.controller import PipelineControllerImpl
 from voice_filtering.events import EventHub
@@ -26,11 +27,15 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
     source = CaptureSource()
     resampler = StreamingResampler()
     rnnoise = RNNoiseProcessor()
+    hush = HushProcessor()
     transcriber = WhisperASR(model_path)
     hub = EventHub()
 
     if not rnnoise.is_loaded:
         hub.publish_error("STAGE_UNAVAILABLE", "rnnoise", rnnoise.load_error or "RNNoise unavailable", recoverable=True)
+
+    if not hush.is_loaded:
+        hub.publish_error("STAGE_UNAVAILABLE", "hush", hush.load_error or "Hush unavailable", recoverable=True)
 
     try:
         transcriber.load()
@@ -47,7 +52,7 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
     controller = PipelineControllerImpl(
         source=source, resampler=resampler, transcriber=transcriber,
         scheduler=scheduler, on_event=on_transcript, on_level=hub.publish_level,
-        rnnoise=rnnoise,
+        rnnoise=rnnoise, hush=hush,
     )
     controller_ref[0] = controller
 
