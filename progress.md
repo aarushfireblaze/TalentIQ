@@ -15,9 +15,13 @@ For coding tasks, run focused tests while editing; run one full suite and `pip c
 
 ## Current state
 
-H0 received user approval on 2026-09-18. `main` includes M4 commit `5fe9210` with Raw, RNNoise, Hush and Combined modes. The final M4 suite passed 137 tests, and `pip check` found no broken requirements. The user accepted the H2 live test on 2026-09-20: Combined filtered most non-speech noise, but some primary words were mixed up and loud competing speech was transcribed. The loud-speaker case remains a known Hush limit. H1's separate user retest decision is not recorded here.
+H0 received user approval on 2026-09-18. H1's separate user retest decision is not recorded here. `main` includes M4 commit `5fe9210`, M5 merge `789d0dc` (evaluator commit `684c310`), M6 commit `23c2519`, and checkpoint record `ecae31d`. M6 adds the recording opt-in, device-load and device-error UI handling, transcript copy cleanup, controller recording wiring, and `scripts/live_run_10min.py`.
 
-The same-input four-mode replay is under `artifacts/m4/replay/` in the main worktree. It used one 11-second, 48 kHz mono clip and measured zero output drops; Combined lag was 30 ms against Raw. The clip had no competing speaker. Controlled T3/T4 background intrusion and primary retention comparison is **NOT RUN**; the H2 decision records the user's live acceptance, not a comparative T3/T4 pass. M5 remains unassigned.
+This audit ran the final current snapshot: `.venv/bin/python -m unittest discover -s tests -v` passed **140 tests** in 25.383 s; `.venv/bin/python -m pip check` reported `No broken requirements found`. Test process also emitted existing nanobind/soxr reference-leak diagnostics after successful tests.
+
+`ecae31d` records H3 user acceptance on 2026-09-20. No M5 evaluator result or M6 live-run report is present in this worktree: `artifacts/` is ignored and contains only the M4 replay. Do not treat the committed claim of 512 MB peak memory and 0 drops as independently reproducible evidence from this checkout. `scripts/live_run_10min.py` can start a Raw session and poll RSS plus service metrics for 600 s, but does not calculate or persist queue-depth history, late frames, ASR partial latency, or per-stage p95 values itself. Those T5 values remain **NOT RECORDED**.
+
+The same-input four-mode replay is under `artifacts/m4/replay/` in the main worktree. It used one 11-second, 48 kHz mono clip and measured zero output drops; Combined lag was 30 ms against Raw. The clip had no competing speaker. Controlled T3/T4 background intrusion and primary retention comparison is **NOT RUN**; H2 records user live acceptance, not a comparative T3/T4 pass.
 
 ### Historical H1 worktrees (do not rerun)
 
@@ -56,9 +60,9 @@ Create each after its stated gate, from latest user-approved integrated `main`. 
 | M3 `voice-m3-hush-stream` | M2 reviewed and integrated | Add Hush-only live path through one stateful 48-to-16 kHz conversion. Own Hush follow-up, controller/service and integration tests. Preserve timing, epochs, 160-sample hops, bounded queues, explicit errors and metrics. Show live mode, deterministic replay, real timing and focused/full tests. | Done |
 | M4 `voice-m4-combined` | M3 reviewed and integrated | Add Combined path: 48 kHz capture, RNNoise, **one** 16 kHz conversion, Hush, ASR. Own controller/service/UI and integration tests in this sequential worktree. Reset stage/provenance on mode switch; no silent fallback. Show same-input four-mode replay, measured alignment, drops, real models and focused/full tests. Prepare H2. | Done (`5fe9210`) |
 | H2 user test | M4 reviewed, integrated and launched | User checks near primary speech plus second speaker 3–6 feet away at lower/moderate volume; mixed fan and conversation; live switching and same-input four-mode comparison. Record background intrusions and primary retention separately. User accepts or assigns repairs before M5. | Done — user accepted 2026-09-20; controlled T3/T4 comparison **NOT RUN** |
-| M5 `voice-m5-evaluator` | H2 accepted and integrated | Build repeatable A/B evaluator in `scripts/` and evaluator tests. Feed one immutable 48 kHz source through four independent/reset paths with identical ASR settings. Save aligned WAVs/transcripts, hashes, model versions, timings, gaps/drops and scoring inputs. Reproduce T1–T4 reports; focused/full tests. | Held |
-| M6 `voice-m6-ux-stability` | M5 reviewed and integrated | Harden existing device selector, status/errors, copy/clear, recording opt-in and recovery. Own UI/service and tests sequentially. Instrument actual 10-minute live run: memory, queues, drops, late frames, partial latency and stage p95. Focused/full tests and run report prepare H3. | Held |
-| H3 user test | M6 reviewed, integrated and launched | User runs T1–T6 on final four-mode snapshot, including 10-minute session. Record feedback and route repairs before M7. | Held |
+| M5 `voice-m5-evaluator` | H2 accepted and integrated | Evaluator commit `684c310` merged as `789d0dc`. It adds scoring and evaluator tests. No saved T1–T4 evaluator report, transcript, hash, or scoring-input artifact is present in this checkout. | Integrated; execution evidence **NOT RECORDED** |
+| M6 `voice-m6-ux-stability` | M5 reviewed and integrated | M6 implementation `23c2519` is on `main`: UI/service hardening, opt-in recording, and a 600-second live-run script. Current full suite passes 140 tests; `pip check` passes. No M6 report is present; required T5 queue, late-frame, partial-latency, and stage-p95 evidence is **NOT RECORDED**. | Integrated; live-run evidence **NOT RECORDED** |
+| H3 user test | M6 reviewed, integrated and launched | Commit `ecae31d` records user acceptance on 2026-09-20. Preserve this recorded checkpoint decision. Supporting T1–T6 results and 10-minute run artifact are absent from this checkout. | Recorded accepted; evidence **NOT RECORDED** |
 | M7 `voice-m7-acceptance` | H3 accepted and integrated | Verify clean setup, exact launch, T1–T6, model/license notices, known limits and all PRD §15 criteria. Own `README.md` and final evidence artifacts; user records final state on this board. Full suite, `pip check`, real/live evidence and user sign-off. | Held |
 
 ## Copy-paste prompts for worktree agents
@@ -139,7 +143,9 @@ You own task M7 in this worktree. Read AGENTS.md, the M7 row and Shared acceptan
 | M1 / H1 | M1 and repairs integrated; first H1 user test failed | Separate H1 retest decision not recorded. |
 | M2 | Integrated | No M2 integration blocker recorded. |
 | M3–M4 / H2 | M3 and M4 integrated; H2 user accepted 2026-09-20 | Controlled T3/T4 comparison **NOT RUN**; primary word mix-ups and loud competing speech remain known limits. |
-| M5–M6 / H3 | M5 and M6 integrated; H3 user accepted 2026-09-20 | UI hardened, live stability and 10-minute session recorded (peak 512 MB, 0 drops). |
-| M7 | Held | H3 and final T1–T6 evidence. |
+| M5 | Integrated: `684c310`, merged by `789d0dc` | Evaluator code/tests present. T1–T4 execution artifact and score inputs **NOT RECORDED**. |
+| M6 | Integrated: `23c2519` | UI/service changes and live-run script present. Required T5 report is **NOT RECORDED**; historical claim of 512 MB/0 drops has no artifact in this checkout. |
+| H3 | Accepted recorded by `ecae31d` on 2026-09-20 | User decision is recorded. Supporting T1–T6 and T5 evidence is **NOT RECORDED**. |
+| M7 | Held | Final acceptance must document clean setup, T1–T6, model/license notices, known limits, and PRD §15. |
 
 User updates a task state with date, commit, exact final test result, real/live evidence path, blocker and checkpoint decision. Never convert **NOT RUN** to passed without required evidence.
