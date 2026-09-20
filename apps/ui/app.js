@@ -84,6 +84,7 @@
             }
         } catch (e) {
             console.error('Failed to fetch devices:', e);
+            showError('Failed to load devices: ' + e.message);
         }
     }
 
@@ -372,6 +373,7 @@
         stopPendingPoll();
         const deviceId = deviceSelect.value || '0';
         const mode = currentMode || 'raw';
+        const record = document.getElementById('recordCheckbox') ? document.getElementById('recordCheckbox').checked : false;
         try {
             const resp = await fetch('/api/start', {
                 method: 'POST',
@@ -382,12 +384,15 @@
                 body: JSON.stringify({
                     device_id: deviceId,
                     mode: mode,
-                    record: false
+                    record: record
                 })
             });
             const data = await resp.json();
             if (data.error) {
                 showError(data.error.message);
+                if (data.error.code === 'AUDIO_DEVICE_ERROR') {
+                    permissionNotice.style.display = 'block';
+                }
             } else {
                 if (data.mode) currentMode = data.mode;
                 updateStatus(data.state || 'listening');
@@ -439,13 +444,21 @@
     }
 
     function handleCopy() {
-        const text = transcript.map(t => t.text).join('\n');
+        const textToCopy = Array.from(transcriptEl.querySelectorAll('.transcript-entry'))
+            .map(el => {
+                const clone = el.cloneNode(true);
+                const tag = clone.querySelector('.mode-tag');
+                if (tag) tag.remove();
+                return clone.textContent;
+            })
+            .join(' ');
+
         if (navigator.clipboard) {
-            navigator.clipboard.writeText(text).catch(() => {
-                fallbackCopy(text);
+            navigator.clipboard.writeText(textToCopy).catch(() => {
+                fallbackCopy(textToCopy);
             });
         } else {
-            fallbackCopy(text);
+            fallbackCopy(textToCopy);
         }
     }
 

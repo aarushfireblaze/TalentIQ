@@ -153,6 +153,14 @@ class TestServiceState(unittest.TestCase):
         self.assertEqual(data["state"], "listening")
         self.client.post("/api/stop")
 
+    def test_start_with_recording_returns_listening(self):
+        resp = self.client.post("/api/start", json={"device_id": "0", "mode": "raw", "record": True})
+        self.assertEqual(resp.status_code, 202)
+        data = resp.json()
+        self.assertEqual(data["state"], "listening")
+        self.assertEqual(data["recording"], True)
+        self.client.post("/api/stop")
+
     def test_stop_returns_idle(self):
         self.client.post("/api/start", json={"device_id": "0", "mode": "raw", "record": False})
         resp = self.client.post("/api/stop")

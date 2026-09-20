@@ -57,6 +57,7 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
         source=source, resampler=resampler, transcriber=transcriber,
         scheduler=scheduler, on_event=on_transcript, on_level=hub.publish_level,
         rnnoise=rnnoise, hush=hush, on_error=on_pipeline_error,
+        dev_recording=dev_recording
     )
     controller_ref[0] = controller
 

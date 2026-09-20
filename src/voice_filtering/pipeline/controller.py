@@ -12,6 +12,8 @@ from voice_filtering.contracts import AudioFrame, TranscriptEvent
 from voice_filtering.audio.capture import CaptureSource, enumerate_devices, get_default_device_id
 from voice_filtering.audio.resample import StreamingResampler
 from voice_filtering.asr.whisper import WhisperASR, ASRScheduler
+from voice_filtering.audio.recording import WAVWriter
+from pathlib import Path
 
 _VALID_MODES = ("raw", "rnnoise", "hush", "combined")
 
@@ -29,6 +31,7 @@ class PipelineControllerImpl:
         rnnoise=None,
         hush=None,
         on_error: Callable[[dict], None] = lambda error: None,
+        dev_recording: bool = False,
     ) -> None:
         self._source = source
         self._resampler = resampler
@@ -58,6 +61,11 @@ class PipelineControllerImpl:
         self._drop_count: int = 0
         self._gap_count: int = 0
         self._mode_switch_count: int = 0
+        self._dev_recording = dev_recording
+        self._raw_writer = WAVWriter(Path("artifacts/m6/recordings"), 48000)
+        self._rnnoise_writer = WAVWriter(Path("artifacts/m6/recordings"), 48000)
+        self._hush_writer = WAVWriter(Path("artifacts/m6/recordings"), 16000)
+        self._combined_writer = WAVWriter(Path("artifacts/m6/recordings"), 16000)
 
     def start(self, device_id: str, mode: str, record: bool) -> dict:
         with self._lock:
@@ -85,6 +93,12 @@ class PipelineControllerImpl:
             self._capture_stop_event.clear()
             self._dsp_stop_event.clear()
             self._running = True
+            
+            if self._recording and self._dev_recording:
+                self._raw_writer.start(self._session_id + "_raw")
+                self._rnnoise_writer.start(self._session_id + "_rnnoise")
+                self._hush_writer.start(self._session_id + "_hush")
+                self._combined_writer.start(self._session_id + "_combined")
         try:
             self._source.start(device_id=device_id, session_id=self._session_id)
         except Exception as e:
@@ -128,6 +142,12 @@ class PipelineControllerImpl:
         if self._dsp_thread and self._dsp_thread.is_alive():
             self._dsp_thread.join(timeout=2.0)
         self._scheduler.finish(timeout_s=5.0)
+        
+        self._raw_writer.stop()
+        self._rnnoise_writer.stop()
+        self._hush_writer.stop()
+        self._combined_writer.stop()
+        
         with self._lock:
             self._state = "idle"
         return self.snapshot()
@@ -356,12 +376,15 @@ class PipelineControllerImpl:
                 dbfs = -100.0
             self._on_level(dbfs, dbfs, self._session_id, self._epoch)
 
+        self._raw_writer.write_frame(frame)
+
         current_mode = self._mode
         if current_mode in ("rnnoise", "combined"):
             if not self._rnnoise_available():
                 return self._stage_failed("rnnoise", self._rnnoise_unavailable_reason())
             try:
                 frame = self._rnnoise.process(frame)
+                self._rnnoise_writer.write_frame(frame)
             except Exception as e:
                 return self._stage_failed("rnnoise", str(e))
 
@@ -375,8 +398,11 @@ class PipelineControllerImpl:
                     return self._stage_failed("hush", self._hush_unavailable_reason())
                 try:
                     rframe = self._hush.process(rframe)
+                    self._hush_writer.write_frame(rframe)
                 except Exception as e:
                     return self._stage_failed("hush", str(e))
+            if current_mode == "combined":
+                self._combined_writer.write_frame(rframe)
             self._scheduler.push_audio(rframe)
         return True
 
