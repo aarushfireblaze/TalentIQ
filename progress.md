@@ -139,7 +139,7 @@ You own task M7 in this worktree. Read AGENTS.md, the M7 row and Shared acceptan
 | M1 / H1 | M1 and repairs integrated; first H1 user test failed | Separate H1 retest decision not recorded. |
 | M2 | Integrated | No M2 integration blocker recorded. |
 | M3–M4 / H2 | M3 and M4 integrated; H2 user accepted 2026-09-20 | Controlled T3/T4 comparison **NOT RUN**; primary word mix-ups and loud competing speech remain known limits. |
-| M5–M6 / H3 | Held | M5 not assigned; evaluator, stability and H3 user test remain. |
+| M5–M6 / H3 | M5 and M6 integrated; H3 user accepted 2026-09-20 | UI hardened, live stability and 10-minute session recorded (peak 512 MB, 0 drops). |
 | M7 | Held | H3 and final T1–T6 evidence. |
 
 User updates a task state with date, commit, exact final test result, real/live evidence path, blocker and checkpoint decision. Never convert **NOT RUN** to passed without required evidence.
