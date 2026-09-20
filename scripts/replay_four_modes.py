@@ -172,8 +172,22 @@ def main() -> int:
             expected = re.findall(r"[a-z0-9']+", args.primary_reference.lower())
             actual = re.findall(r"[a-z0-9']+", result["transcript"].lower())
             matched = sum(block.size for block in difflib.SequenceMatcher(None, expected, actual).get_matching_blocks())
-            result["primary_retention_pct"] = round(100 * matched / len(expected), 1)
-        result["background_intrusion_rate_pct"] = None if not args.background_reference else "NOT_SCORED"
+            result["primary_retention_pct"] = round(100 * matched / len(expected), 1) if expected else 0.0
+
+        if args.background_reference:
+            bg_expected = re.findall(r"[a-z0-9']+", args.background_reference.lower())
+            actual = re.findall(r"[a-z0-9']+", result["transcript"].lower())
+            if bg_expected:
+                expected_set = set(expected) if args.primary_reference else set()
+                bg_expected_set = set(bg_expected)
+                bg_words_only = bg_expected_set - expected_set
+                bg_matched = sum(1 for w in actual if w in bg_words_only)
+                result["background_intrusion_rate_pct"] = round(100 * bg_matched / len(bg_expected), 1)
+            else:
+                result["background_intrusion_rate_pct"] = None
+        else:
+            result["background_intrusion_rate_pct"] = None
+            
         result["alignment_delay_ms_vs_raw"] = 0.0 if raw_pcm is None else measured_lag_ms(raw_pcm, pcm)
         if raw_pcm is None:
             raw_pcm = pcm
