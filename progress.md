@@ -1,6 +1,6 @@
 # Voice filtering: worktree plan and progress
 
-Updated: 2026-09-19. This is the only active task board. Approved requirements: `docs/requirements/Voice_Filtering_System_PRD.docx` and its searchable `.txt` copy. `README.md` has setup; `AGENTS.md` has standing agent rules. Older plans and handoffs remain in Git history.
+Updated: 2026-09-20. This is the only active task board. Approved requirements: `docs/requirements/Voice_Filtering_System_PRD.docx` and its searchable `.txt` copy. `README.md` has setup; `AGENTS.md` has standing agent rules. Older plans and handoffs remain in Git history.
 
 ## Worktree rules
 
@@ -15,18 +15,18 @@ For coding tasks, run focused tests while editing; run one full suite and `pip c
 
 ## Current state
 
-H0 received user approval on 2026-09-18. Live latency was not formally measured. M1 RNNoise code exists on `main`; H1 failed its first user test. Raw and RNNoise appeared active together and could not be selected reliably. Background speech produced random transcript text; clear near-microphone speech was recognized. Fan/typing noise without speech and same-input Raw/RNNoise comparison were **NOT RUN**. Native RNNoise executed, but useful suppression is **not established**. Competing-speech suppression belongs to later Hush work. M2 and later integration remain held.
+H0 received user approval on 2026-09-18. `main` includes M4 commit `5fe9210` with Raw, RNNoise, Hush and Combined modes. The final M4 suite passed 137 tests, and `pip check` found no broken requirements. The user accepted the H2 live test on 2026-09-20: Combined filtered most non-speech noise, but some primary words were mixed up and loud competing speech was transcribed. The loud-speaker case remains a known Hush limit. H1's separate user retest decision is not recorded here.
 
-`main` points to `1446da4` at this update. H1 baseline repair commit `3419488` is **not on main**. Branches `voice-m1-rnnoise` (`b927e31`) and `voice-h1-resampler` (`ea5e45f`) remain in Git, but their old worktree folders are gone. Unfinished edits survive under `docs/handoffs/pause-2026-09-18/` as draft patches and status text. Inspect before porting; never apply an entire draft blindly. `docs/handoffs/h1-paused-worktree.patch` is an older mixed draft. `ee160b1` duplicates baseline `3419488`; never integrate both.
+The same-input four-mode replay is under `artifacts/m4/replay/` in the main worktree. It used one 11-second, 48 kHz mono clip and measured zero output drops; Combined lag was 30 ms against Raw. The clip had no competing speaker. Controlled T3/T4 background intrusion and primary retention comparison is **NOT RUN**; the H2 decision records the user's live acceptance, not a comparative T3/T4 pass. M5 remains unassigned.
 
-### Worktrees to create now
+### Historical H1 worktrees (do not rerun)
 
 | Task | Suggested worktree | Start after | State |
 |---|---|---|---|
 | H1-A | `voice-h1-controls` | Now, from current `main` | Done |
 | H1-B | `voice-h1-asr` | Now, from current `main` | Done |
-| H1-C | `voice-h1-release` | H1-A and H1-B committed and reviewed | Ready to start |
-| H1 user retest | No coding worktree | H1-C launch and evidence ready | Waiting |
+| H1-C | `voice-h1-release` | H1-A and H1-B committed and reviewed | Done; repairs integrated |
+| H1 user retest | No coding worktree | H1-C launch and evidence ready | Decision not recorded |
 
 ### H1-A: controls, controller, RNNoise evidence
 
@@ -52,10 +52,10 @@ Create each after its stated gate, from latest user-approved integrated `main`. 
 
 | Task / suggested worktree | Start after | Agent assignment and exit evidence | State |
 |---|---|---|---|
-| M2 `voice-m2-hush-offline` | H1 accepted and integrated | Build isolated Hush adapter and deterministic 16 kHz WAV harness. Own new `src/voice_filtering/audio/hush.py`, Hush tests and setup/fixture scripts; no controller/UI edits. Pin `weya-ai/hush` revision `a55d932cbf6344d284ac985f21e7f6e5bc4d38a5` and native source commit `9f6414e91461a8f4bdf9840c0cdcdcb7da986339`. Verify artifact SHA256, arm64 linkage/load, C ABI, 160-sample hop, finite output, reset/flush, measured alignment/timing and license notices. Real native inference plus focused/full tests required. | Held |
-| M3 `voice-m3-hush-stream` | M2 reviewed and integrated | Add Hush-only live path through one stateful 48-to-16 kHz conversion. Own Hush follow-up, controller/service and integration tests. Preserve timing, epochs, 160-sample hops, bounded queues, explicit errors and metrics. Show live mode, deterministic replay, real timing and focused/full tests. | Held |
-| M4 `voice-m4-combined` | M3 reviewed and integrated | Add Combined path: 48 kHz capture, RNNoise, **one** 16 kHz conversion, Hush, ASR. Own controller/service/UI and integration tests in this sequential worktree. Reset stage/provenance on mode switch; no silent fallback. Show same-input four-mode replay, measured alignment, drops, real models and focused/full tests. Prepare H2. | Held |
-| H2 user test | M4 reviewed, integrated and launched | User checks near primary speech plus second speaker 3–6 feet away at lower/moderate volume; mixed fan and conversation; live switching and same-input four-mode comparison. Record background intrusions and primary retention separately. User accepts or assigns repairs before M5. | Held |
+| M2 `voice-m2-hush-offline` | H1 accepted and integrated | Build isolated Hush adapter and deterministic 16 kHz WAV harness. Own new `src/voice_filtering/audio/hush.py`, Hush tests and setup/fixture scripts; no controller/UI edits. Pin `weya-ai/hush` revision `a55d932cbf6344d284ac985f21e7f6e5bc4d38a5` and native source commit `9f6414e91461a8f4bdf9840c0cdcdcb7da986339`. Verify artifact SHA256, arm64 linkage/load, C ABI, 160-sample hop, finite output, reset/flush, measured alignment/timing and license notices. Real native inference plus focused/full tests required. | Done |
+| M3 `voice-m3-hush-stream` | M2 reviewed and integrated | Add Hush-only live path through one stateful 48-to-16 kHz conversion. Own Hush follow-up, controller/service and integration tests. Preserve timing, epochs, 160-sample hops, bounded queues, explicit errors and metrics. Show live mode, deterministic replay, real timing and focused/full tests. | Done |
+| M4 `voice-m4-combined` | M3 reviewed and integrated | Add Combined path: 48 kHz capture, RNNoise, **one** 16 kHz conversion, Hush, ASR. Own controller/service/UI and integration tests in this sequential worktree. Reset stage/provenance on mode switch; no silent fallback. Show same-input four-mode replay, measured alignment, drops, real models and focused/full tests. Prepare H2. | Done (`5fe9210`) |
+| H2 user test | M4 reviewed, integrated and launched | User checks near primary speech plus second speaker 3–6 feet away at lower/moderate volume; mixed fan and conversation; live switching and same-input four-mode comparison. Record background intrusions and primary retention separately. User accepts or assigns repairs before M5. | Done — user accepted 2026-09-20; controlled T3/T4 comparison **NOT RUN** |
 | M5 `voice-m5-evaluator` | H2 accepted and integrated | Build repeatable A/B evaluator in `scripts/` and evaluator tests. Feed one immutable 48 kHz source through four independent/reset paths with identical ASR settings. Save aligned WAVs/transcripts, hashes, model versions, timings, gaps/drops and scoring inputs. Reproduce T1–T4 reports; focused/full tests. | Held |
 | M6 `voice-m6-ux-stability` | M5 reviewed and integrated | Harden existing device selector, status/errors, copy/clear, recording opt-in and recovery. Own UI/service and tests sequentially. Instrument actual 10-minute live run: memory, queues, drops, late frames, partial latency and stage p95. Focused/full tests and run report prepare H3. | Held |
 | H3 user test | M6 reviewed, integrated and launched | User runs T1–T6 on final four-mode snapshot, including 10-minute session. Record feedback and route repairs before M7. | Held |
@@ -136,10 +136,10 @@ You own task M7 in this worktree. Read AGENTS.md, the M7 row and Shared acceptan
 | Milestone | Result | Blocker |
 |---|---|---|
 | M0 / H0 | M0 integrated; H0 user approved | Live latency not formally measured. |
-| M1 / H1 | M1 code integrated; H1 failed first test | H1-A/B/C repairs, same-input proof and user retest pending. |
-| M2 | Held | H1 acceptance and real offline Hush proof. |
-| M3–M4 / H2 | Held | M2, streaming Hush, Combined and user test. |
-| M5–M6 / H3 | Held | H2, evaluator, stability and user test. |
+| M1 / H1 | M1 and repairs integrated; first H1 user test failed | Separate H1 retest decision not recorded. |
+| M2 | Integrated | No M2 integration blocker recorded. |
+| M3–M4 / H2 | M3 and M4 integrated; H2 user accepted 2026-09-20 | Controlled T3/T4 comparison **NOT RUN**; primary word mix-ups and loud competing speech remain known limits. |
+| M5–M6 / H3 | Held | M5 not assigned; evaluator, stability and H3 user test remain. |
 | M7 | Held | H3 and final T1–T6 evidence. |
 
 User updates a task state with date, commit, exact final test result, real/live evidence path, blocker and checkpoint decision. Never convert **NOT RUN** to passed without required evidence.
