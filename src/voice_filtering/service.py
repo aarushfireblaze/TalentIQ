@@ -78,9 +78,8 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
         if not isinstance(body, dict):
             return JSONResponse({"error": {"code": "INVALID_STATE", "stage": "api", "message": "Invalid JSON", "recoverable": False}}, status_code=422)
         device_id = body.get("device_id", "0")
-        mode = body.get("mode", "raw")
         record = body.get("record", False)
-        result = controller.start(device_id, mode, record)
+        result = controller.start(device_id, record)
         if "error" in result:
             status = 409 if result["error"]["code"] in ("INVALID_STATE", "STAGE_UNAVAILABLE", "INVALID_MODE") else 422
             return JSONResponse(result, status_code=status)
@@ -92,17 +91,6 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
     async def post_stop(request: Request) -> JSONResponse:
         result = controller.stop()
         hub.publish_state("idle")
-        return JSONResponse(result)
-
-    async def post_mode(request: Request) -> JSONResponse:
-        try:
-            body = await request.json()
-        except Exception:
-            return JSONResponse({"error": {"code": "INVALID_STATE", "stage": "api", "message": "Invalid JSON", "recoverable": False}}, status_code=422)
-        mode = body.get("mode", "raw")
-        result = controller.switch_mode(mode)
-        if "error" in result:
-            return JSONResponse(result, status_code=409)
         return JSONResponse(result)
 
     async def post_clear(request: Request) -> JSONResponse:
@@ -154,7 +142,6 @@ def create_app(model_path: str, host: str = "127.0.0.1", port: int = 8765, dev_r
         Route("/api/devices", get_devices, methods=["GET"]),
         Route("/api/start", post_start, methods=["POST"]),
         Route("/api/stop", post_stop, methods=["POST"]),
-        Route("/api/mode", post_mode, methods=["POST"]),
         Route("/api/transcript/clear", post_clear, methods=["POST"]),
         Route("/api/events", get_events, methods=["GET"]),
         Route("/", index, methods=["GET"]),

@@ -138,65 +138,6 @@ button:disabled {
     text-align: right;
 }
 
-.modes {
-    margin-bottom: 24px;
-}
-
-.modes h3 {
-    font-size: 16px;
-    margin-bottom: 12px;
-    color: #fff;
-}
-
-.mode-options {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-}
-
-.mode-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    border-radius: 6px;
-    border: 1px solid #4a5568;
-    background: #2d3748;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.mode-label.active {
-    border-color: #38a169;
-    background: #276749;
-}
-
-.mode-label.disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.mode-label input[type="radio"] {
-    display: none;
-}
-
-.mode-status {
-    margin-left: auto;
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 10px;
-}
-
-.mode-status.active {
-    background: #38a169;
-    color: #fff;
-}
-
-.mode-status.unavailable {
-    background: #4a5568;
-    color: #a0aec0;
-}
-
 .transcript-section {
     margin-bottom: 24px;
 }
@@ -316,11 +257,4 @@ button:disabled {
     margin-bottom: 16px;
     font-size: 14px;
     color: #fc8181;
-}
-
-.mode-tag {
-    font-size: 10px;
-    color: #718096;
-    margin-left: 6px;
-    font-style: normal;
 }

@@ -162,6 +162,17 @@ class TestASRScheduler(unittest.TestCase):
 
 class TestPipelineController(unittest.TestCase):
     def setUp(self):
+        class FakeStage:
+            is_loaded = True
+            load_error = None
+            metrics = type("Metrics", (), {"avg_ms": 1.0, "p95_ms": 1.0, "total_frames": 0})()
+
+            def reset(self):
+                return None
+
+            def process(self, frame):
+                return frame
+
         self.source = FakeAudioSource()
         self.resampler = StreamingResampler()
         self.transcriber = FakeTranscriber(["hello world"])
@@ -173,21 +184,23 @@ class TestPipelineController(unittest.TestCase):
             transcriber=self.transcriber,
             scheduler=self.scheduler,
             on_event=lambda e: self.events.append(e),
+            rnnoise=FakeStage(),
+            hush=FakeStage(),
         )
 
     def test_snapshot_initial_state(self):
         snap = self.controller.snapshot()
         self.assertEqual(snap["state"], "idle")
-        self.assertEqual(snap["mode"], "raw")
+        self.assertEqual(snap["mode"], "combined")
         self.assertIn("rnnoise", snap["stages"])
-        self.assertEqual(snap["stages"]["rnnoise"]["status"], "unavailable")
+        self.assertEqual(snap["stages"]["rnnoise"]["status"], "ready")
         self.assertIn("hush", snap["stages"])
-        self.assertEqual(snap["stages"]["hush"]["status"], "unavailable")
+        self.assertEqual(snap["stages"]["hush"]["status"], "ready")
 
     def test_duplicate_start_rejected(self):
-        result1 = self.controller.start("0", "raw", False)
+        result1 = self.controller.start("0", False)
         self.assertIn("state", result1)
-        result2 = self.controller.start("0", "raw", False)
+        result2 = self.controller.start("0", False)
         self.assertIn("error", result2)
 
     def test_stop_idempotent(self):
@@ -197,19 +210,18 @@ class TestPipelineController(unittest.TestCase):
     def test_clear_idle_only(self):
         result = self.controller.clear_transcript()
         self.assertNotIn("error", result)
-        self.controller.start("0", "raw", False)
+        self.controller.start("0", False)
         result = self.controller.clear_transcript()
         self.assertIn("error", result)
         self.controller.stop()
 
-    def test_unavailable_mode_rejected(self):
-        result = self.controller.switch_mode("rnnoise")
-        self.assertIn("error", result)
+    def test_runtime_mode_switch_is_absent(self):
+        self.assertFalse(hasattr(self.controller, "switch_mode"))
 
     def test_missing_model_status(self):
         self.transcriber._loaded = False
         self.transcriber._load_error = "Model not found"
-        result = self.controller.start("0", "raw", False)
+        result = self.controller.start("0", False)
         self.assertIn("error", result)
         self.assertEqual(result["error"]["code"], "MODEL_MISSING")
 

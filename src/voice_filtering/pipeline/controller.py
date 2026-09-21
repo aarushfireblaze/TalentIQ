@@ -15,7 +15,7 @@ from voice_filtering.asr.whisper import WhisperASR, ASRScheduler
 from voice_filtering.audio.recording import WAVWriter
 from pathlib import Path
 
-_VALID_MODES = ("raw", "rnnoise", "hush", "combined")
+_COMBINED_MODE = "combined"
 
 
 class PipelineControllerImpl:
@@ -47,7 +47,7 @@ class PipelineControllerImpl:
         self._session_id: str = ""
         self._epoch: int = 0
         self._device_id: str = ""
-        self._mode: str = "raw"
+        self._mode: str = _COMBINED_MODE
         self._recording: bool = False
         self._transcript: list[dict] = []
         self._last_error: dict | None = None
@@ -57,39 +57,33 @@ class PipelineControllerImpl:
         self._running: bool = False
         self._capture_stop_event = threading.Event()
         self._dsp_stop_event = threading.Event()
-        self._pending_mode: str | None = None
         self._drop_count: int = 0
         self._gap_count: int = 0
-        self._mode_switch_count: int = 0
         self._dev_recording = dev_recording
         self._raw_writer = WAVWriter(Path("artifacts/m6/recordings"), 48000)
         self._rnnoise_writer = WAVWriter(Path("artifacts/m6/recordings"), 48000)
         self._hush_writer = WAVWriter(Path("artifacts/m6/recordings"), 16000)
         self._combined_writer = WAVWriter(Path("artifacts/m6/recordings"), 16000)
 
-    def start(self, device_id: str, mode: str, record: bool) -> dict:
+    def start(self, device_id: str, record: bool) -> dict:
         with self._lock:
             if self._state not in ("idle", "error"):
                 return {"error": {"code": "INVALID_STATE", "stage": "pipeline", "message": "Already running", "recoverable": False}}
-            if mode not in _VALID_MODES:
-                return {"error": {"code": "INVALID_MODE", "stage": "pipeline", "message": f"Mode '{mode}' not supported", "recoverable": False}}
-            if mode in ("rnnoise", "combined") and not self._rnnoise_available():
+            if not self._rnnoise_available():
                 return {"error": {"code": "STAGE_UNAVAILABLE", "stage": "rnnoise", "message": self._rnnoise_unavailable_reason(), "recoverable": False}}
-            if mode in ("hush", "combined") and not self._hush_available():
+            if not self._hush_available():
                 return {"error": {"code": "STAGE_UNAVAILABLE", "stage": "hush", "message": self._hush_unavailable_reason(), "recoverable": False}}
             if not self._transcriber.is_loaded:
                 return {"error": {"code": "MODEL_MISSING", "stage": "asr", "message": "ASR model not loaded", "recoverable": True}}
             self._session_id = str(uuid.uuid4())
             self._epoch = 0
             self._device_id = device_id
-            self._mode = mode
+            self._mode = _COMBINED_MODE
             self._recording = record
             self._state = "starting"
             self._last_error = None
-            self._pending_mode = None
             self._drop_count = 0
             self._gap_count = 0
-            self._mode_switch_count = 0
             self._capture_stop_event.clear()
             self._dsp_stop_event.clear()
             self._running = True
@@ -152,50 +146,6 @@ class PipelineControllerImpl:
             self._state = "idle"
         return self.snapshot()
 
-    def switch_mode(self, mode: str) -> dict:
-        with self._lock:
-            if mode not in _VALID_MODES:
-                return {"error": {"code": "INVALID_MODE", "stage": "pipeline", "message": f"Mode '{mode}' not supported", "recoverable": False}}
-            if mode in ("rnnoise", "combined") and not self._rnnoise_available():
-                return {"error": {"code": "STAGE_UNAVAILABLE", "stage": "rnnoise", "message": self._rnnoise_unavailable_reason(), "recoverable": False}}
-            if mode in ("hush", "combined") and not self._hush_available():
-                return {"error": {"code": "STAGE_UNAVAILABLE", "stage": "hush", "message": self._hush_unavailable_reason(), "recoverable": False}}
-            if self._state not in ("listening", "idle"):
-                return {"error": {"code": "INVALID_STATE", "stage": "pipeline", "message": "Can only switch mode while idle or listening", "recoverable": False}}
-            if mode == self._mode and self._state == "idle":
-                return self._snapshot_locked()
-            if self._state == "idle":
-                self._mode = mode
-                return self._snapshot_locked()
-            self._pending_mode = mode
-        return self.snapshot()
-
-    def _apply_mode_switch(self) -> bool:
-        """Called from capture loop at a frame boundary to apply pending mode."""
-        with self._lock:
-            pending = self._pending_mode
-            if pending is None:
-                return True
-            if pending == self._mode:
-                self._pending_mode = None
-                return True
-            self._pending_mode = None
-            self._mode = pending
-            self._epoch += 1
-            self._mode_switch_count += 1
-            self._gap_count += 1
-        for stage, reset in (
-            ("asr", lambda: self._scheduler.reset(self._session_id, self._epoch, self._mode)),
-            ("resampler", self._resampler.reset),
-            ("rnnoise", self._rnnoise.reset if self._rnnoise is not None else lambda: None),
-            ("hush", self._hush.reset if self._hush is not None else lambda: None),
-        ):
-            try:
-                reset()
-            except Exception as error:
-                return self._stage_failed(stage, str(error))
-        return True
-
     def clear_transcript(self) -> dict:
         with self._lock:
             if self._state != "idle":
@@ -226,7 +176,7 @@ class PipelineControllerImpl:
     def _snapshot_locked(self) -> dict:
         if self._rnnoise is not None and self._rnnoise.is_loaded:
             rnnoise_status = (
-                "active" if self._state == "listening" and self._mode in ("rnnoise", "combined")
+                "active" if self._state == "listening"
                 else "ready"
             )
             rnnoise_reason = None
@@ -243,7 +193,7 @@ class PipelineControllerImpl:
 
         if self._hush is not None and self._hush.is_loaded:
             hush_status = (
-                "active" if self._state == "listening" and self._mode in ("hush", "combined")
+                "active" if self._state == "listening"
                 else "ready"
             )
             hush_reason = None
@@ -298,14 +248,12 @@ class PipelineControllerImpl:
         metrics["asr_drop_count"] = asr_drops
         metrics["drop_count"] = capture_drops + asr_drops
         metrics["gap_count"] = self._gap_count
-        metrics["mode_switch_count"] = self._mode_switch_count
 
         return {
             "state": self._state,
             "session_id": self._session_id,
             "epoch": self._epoch,
             "mode": self._mode,
-            "pending_mode": self._pending_mode,
             "device_id": self._device_id,
             "recording": self._recording,
             "stages": stages,
@@ -359,9 +307,6 @@ class PipelineControllerImpl:
 
     def _capture_loop_body(self, frame: AudioFrame) -> bool:
         """Process a single captured frame. Returns False if capture should stop."""
-        if not self._apply_mode_switch():
-            return False
-
         with self._lock:
             epoch = self._epoch
             session_id = self._session_id
@@ -378,31 +323,27 @@ class PipelineControllerImpl:
 
         self._raw_writer.write_frame(frame)
 
-        current_mode = self._mode
-        if current_mode in ("rnnoise", "combined"):
-            if not self._rnnoise_available():
-                return self._stage_failed("rnnoise", self._rnnoise_unavailable_reason())
-            try:
-                frame = self._rnnoise.process(frame)
-                self._rnnoise_writer.write_frame(frame)
-            except Exception as e:
-                return self._stage_failed("rnnoise", str(e))
+        if not self._rnnoise_available():
+            return self._stage_failed("rnnoise", self._rnnoise_unavailable_reason())
+        try:
+            frame = self._rnnoise.process(frame)
+            self._rnnoise_writer.write_frame(frame)
+        except Exception as e:
+            return self._stage_failed("rnnoise", str(e))
 
         try:
             resampled = self._resampler.push(frame)
         except Exception as e:
             return self._stage_failed("resampler", str(e))
         for rframe in resampled:
-            if current_mode in ("hush", "combined"):
-                if not self._hush_available():
-                    return self._stage_failed("hush", self._hush_unavailable_reason())
-                try:
-                    rframe = self._hush.process(rframe)
-                    self._hush_writer.write_frame(rframe)
-                except Exception as e:
-                    return self._stage_failed("hush", str(e))
-            if current_mode == "combined":
-                self._combined_writer.write_frame(rframe)
+            if not self._hush_available():
+                return self._stage_failed("hush", self._hush_unavailable_reason())
+            try:
+                rframe = self._hush.process(rframe)
+                self._hush_writer.write_frame(rframe)
+            except Exception as e:
+                return self._stage_failed("hush", str(e))
+            self._combined_writer.write_frame(rframe)
             self._scheduler.push_audio(rframe)
         return True
 

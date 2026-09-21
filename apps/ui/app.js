@@ -3,13 +3,7 @@
 
     let eventSource = null;
     let currentState = 'idle';
-    let currentSessionId = '';
-    let currentMode = 'raw';
-    let lastConfirmedMode = 'raw';
     let transcript = [];
-    let devices = [];
-    let _pendingPollTimer = null;
-    let _pendingPollGeneration = 0;
 
     const statusEl = document.getElementById('status');
     const deviceSelect = document.getElementById('device');
@@ -21,24 +15,14 @@
     const copyBtn = document.getElementById('copyBtn');
     const clearBtn = document.getElementById('clearBtn');
     const asrStatusEl = document.getElementById('asrStatus');
+    const rnnoiseInfoEl = document.getElementById('rnnoiseInfo');
+    const hushInfoEl = document.getElementById('hushInfo');
+    const rnnoiseMetricsEl = document.getElementById('rnnoiseMetrics');
+    const hushMetricsEl = document.getElementById('hushMetrics');
+    const metricsSection = document.getElementById('metricsSection');
     const errorBanner = document.getElementById('errorBanner');
     const permissionNotice = document.getElementById('permissionNotice');
-    const rnnoiseRadio = document.getElementById('rnnoiseRadio');
-    const rnnoiseLabel = document.getElementById('rnnoiseLabel');
-    const rnnoiseStatusEl = document.getElementById('rnnoiseStatus');
-    const rnnoiseInfoEl = document.getElementById('rnnoiseInfo');
-    const rnnoiseMetricsEl = document.getElementById('rnnoiseMetrics');
-    const hushRadio = document.getElementById('hushRadio');
-    const hushLabel = document.getElementById('hushLabel');
-    const hushStatusEl = document.getElementById('hushStatus');
-    const hushInfoEl = document.getElementById('hushInfo');
-    const hushMetricsEl = document.getElementById('hushMetrics');
-    const combinedRadio = document.getElementById('combinedRadio');
-    const combinedLabel = document.getElementById('combinedLabel');
-    const combinedStatusEl = document.getElementById('combinedStatus');
-    const metricsSection = document.getElementById('metricsSection');
-    const rawLabel = document.getElementById('rawLabel');
-    const rawStatus = document.getElementById('rawStatus');
+    const recordCheckbox = document.getElementById('recordCheckbox');
 
     function init() {
         fetchDevices();
@@ -48,418 +32,184 @@
         stopBtn.addEventListener('click', handleStop);
         copyBtn.addEventListener('click', handleCopy);
         clearBtn.addEventListener('click', handleClear);
-
-        document.querySelectorAll('input[name="mode"]').forEach(radio => {
-            radio.addEventListener('change', handleModeChange);
-        });
     }
 
     async function fetchState() {
         try {
-            const resp = await fetch('/api/state');
-            const snap = await resp.json();
-            applySnapshot(snap);
-        } catch (e) {
-            console.error('Failed to fetch initial state:', e);
+            applySnapshot(await (await fetch('/api/state')).json());
+        } catch (error) {
+            showError('Failed to fetch service state: ' + error.message);
         }
     }
 
     async function fetchDevices() {
         try {
-            const resp = await fetch('/api/devices');
-            const data = await resp.json();
-            devices = data.devices || [];
+            const data = await (await fetch('/api/devices')).json();
+            const devices = data.devices || [];
             deviceSelect.innerHTML = '';
-            if (devices.length === 0) {
+            if (!devices.length) {
                 deviceSelect.innerHTML = '<option value="">No devices found</option>';
-            } else {
-                devices.forEach(d => {
-                    const opt = document.createElement('option');
-                    opt.value = d.id;
-                    opt.textContent = d.name;
-                    if (d.id === data.default_device_id) opt.selected = true;
-                    deviceSelect.appendChild(opt);
-                });
-                deviceSelect.disabled = false;
+                return;
             }
-        } catch (e) {
-            console.error('Failed to fetch devices:', e);
-            showError('Failed to load devices: ' + e.message);
+            devices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.id;
+                option.textContent = device.name;
+                option.selected = device.id === data.default_device_id;
+                deviceSelect.appendChild(option);
+            });
+            deviceSelect.disabled = false;
+        } catch (error) {
+            showError('Failed to load devices: ' + error.message);
         }
     }
 
     function connectSSE() {
         if (eventSource) eventSource.close();
         eventSource = new EventSource('/api/events');
-
-        eventSource.onmessage = function(event) {
+        eventSource.onmessage = event => {
             try {
-                const data = JSON.parse(event.data);
-                handleEvent(data);
-            } catch (e) {
-                console.error('Failed to parse event:', e);
+                handleEvent(JSON.parse(event.data));
+            } catch (error) {
+                showError('Failed to parse service event: ' + error.message);
             }
         };
-
-        eventSource.onerror = function() {
-            startBtn.disabled = true;
-            updateStatus('error');
-            showError('Disconnected from server. Reconnecting...');
-        };
-
-        eventSource.onopen = function() {
+        eventSource.onopen = () => {
             hideError();
             fetchState();
-            if (currentState === 'idle') {
-                startBtn.disabled = false;
-            }
+        };
+        eventSource.onerror = () => {
+            updateStatus('error');
+            showError('Disconnected from service. Reconnecting...');
         };
     }
 
     function handleEvent(event) {
-        switch (event.type) {
-            case 'snapshot':
-                applySnapshot(event.payload);
-                break;
-            case 'state':
-                updateStatus(event.payload.state);
-                break;
-            case 'level':
-                updateMeter(event.payload.rms_dbfs, event.payload.peak_dbfs);
-                break;
-            case 'transcript':
-                handleTranscriptEvent(event.payload);
-                break;
-            case 'error':
-                showError(event.payload.stage + ': ' + event.payload.message);
-                break;
-        }
+        if (event.type === 'snapshot') applySnapshot(event.payload);
+        if (event.type === 'state') updateStatus(event.payload.state);
+        if (event.type === 'level') updateMeter(event.payload.rms_dbfs);
+        if (event.type === 'transcript') handleTranscriptEvent(event.payload);
+        if (event.type === 'error') showError(event.payload.stage + ': ' + event.payload.message);
     }
 
-    function applySnapshot(snap) {
-        updateStatus(snap.state);
-        currentSessionId = snap.session_id || '';
-        currentMode = snap.mode || 'raw';
-        lastConfirmedMode = currentMode;
-
-        if (snap.stages) {
-            if (snap.stages.asr) {
-                asrStatusEl.textContent = snap.stages.asr.status;
-                asrStatusEl.className = snap.stages.asr.status === 'ready' || snap.stages.asr.status === 'active' ? '' : 'unavailable';
-            }
-            if (snap.stages.rnnoise) {
-                const rn = snap.stages.rnnoise;
-                rnnoiseInfoEl.textContent = rn.status;
-                rnnoiseInfoEl.className = (rn.status === 'ready' || rn.status === 'active') ? '' : 'unavailable';
-
-                if (rn.status === 'ready' || rn.status === 'active') {
-                    rnnoiseRadio.disabled = false;
-                    rnnoiseLabel.classList.remove('disabled');
-                    rnnoiseStatusEl.textContent = rn.status === 'active' ? 'Processing' : 'Available';
-                    rnnoiseStatusEl.className = 'mode-status';
-                } else if (rn.status === 'failed') {
-                    rnnoiseRadio.disabled = true;
-                    rnnoiseLabel.classList.add('disabled');
-                    rnnoiseLabel.classList.remove('active');
-                    rnnoiseStatusEl.textContent = 'Failed: ' + (rn.reason || 'unknown');
-                    rnnoiseStatusEl.className = 'mode-status unavailable';
-                } else {
-                    rnnoiseRadio.disabled = true;
-                    rnnoiseLabel.classList.add('disabled');
-                    rnnoiseLabel.classList.remove('active');
-                    rnnoiseStatusEl.textContent = rn.reason || 'Unavailable';
-                    rnnoiseStatusEl.className = 'mode-status unavailable';
-                }
-            }
-            if (snap.stages.hush) {
-                const hu = snap.stages.hush;
-                hushInfoEl.textContent = hu.status;
-                hushInfoEl.className = (hu.status === 'ready' || hu.status === 'active') ? '' : 'unavailable';
-
-                if (hu.status === 'ready' || hu.status === 'active') {
-                    hushRadio.disabled = false;
-                    hushLabel.classList.remove('disabled');
-                    hushStatusEl.textContent = hu.status === 'active' ? 'Processing' : 'Available';
-                    hushStatusEl.className = 'mode-status';
-                } else if (hu.status === 'failed') {
-                    hushRadio.disabled = true;
-                    hushLabel.classList.add('disabled');
-                    hushLabel.classList.remove('active');
-                    hushStatusEl.textContent = 'Failed: ' + (hu.reason || 'unknown');
-                    hushStatusEl.className = 'mode-status unavailable';
-                } else {
-                    hushRadio.disabled = true;
-                    hushLabel.classList.add('disabled');
-                    hushLabel.classList.remove('active');
-                    hushStatusEl.textContent = hu.reason || 'Unavailable';
-                    hushStatusEl.className = 'mode-status unavailable';
-                }
-            }
-            const rn = snap.stages.rnnoise;
-            const hu = snap.stages.hush;
-            if (rn && hu) {
-                const unavailable = [rn, hu].filter(stage => stage.status !== 'ready' && stage.status !== 'active');
-                combinedRadio.disabled = unavailable.length > 0;
-                combinedLabel.classList.toggle('disabled', combinedRadio.disabled);
-                if (unavailable.length > 0) {
-                    const missing = rn.status !== 'ready' && rn.status !== 'active' ? 'RNNoise' : 'Hush';
-                    combinedStatusEl.textContent = missing + ': ' + (unavailable[0].reason || unavailable[0].status);
-                    combinedStatusEl.className = 'mode-status unavailable';
-                }
-            }
-        }
-
-        if (snap.metrics) {
-            const m = snap.metrics;
-            let showMetrics = false;
-            if (m.rnnoise_avg_ms != null) {
-                showMetrics = true;
-                rnnoiseMetricsEl.textContent = 'avg=' + m.rnnoise_avg_ms.toFixed(2) + 'ms p95=' + (m.rnnoise_p95_ms != null ? m.rnnoise_p95_ms.toFixed(2) : '--') + 'ms frames=' + (m.rnnoise_total_frames || 0);
-            }
-            if (m.hush_avg_ms != null) {
-                showMetrics = true;
-                hushMetricsEl.textContent = 'avg=' + m.hush_avg_ms.toFixed(2) + 'ms p95=' + (m.hush_p95_ms != null ? m.hush_p95_ms.toFixed(2) : '--') + 'ms frames=' + (m.hush_total_frames || 0);
-            }
-            if (showMetrics) {
-                metricsSection.style.display = '';
-            } else {
-                metricsSection.style.display = 'none';
-            }
-        }
-
-        document.querySelectorAll('input[name="mode"]').forEach(r => {
-            if (r.value === currentMode) r.checked = true;
-        });
-
-        updateModeSelection();
-        updatePendingMode(snap.pending_mode);
-
-        if (snap.transcript) {
-            transcript = snap.transcript;
+    function applySnapshot(snapshot) {
+        updateStatus(snapshot.state);
+        updateStageStatus(snapshot.stages || {});
+        updateMetrics(snapshot.metrics || {});
+        if (snapshot.transcript) {
+            transcript = snapshot.transcript;
             renderTranscript();
         }
+        if (snapshot.last_error) showError(snapshot.last_error.stage + ': ' + snapshot.last_error.message);
+    }
 
-        updateButtons();
-        if (snap.last_error) showError(snap.last_error.stage + ': ' + snap.last_error.message);
+    function updateStageStatus(stages) {
+        updateInfo(asrStatusEl, stages.asr);
+        updateInfo(rnnoiseInfoEl, stages.rnnoise);
+        updateInfo(hushInfoEl, stages.hush);
+    }
+
+    function updateInfo(element, stage) {
+        if (!stage) return;
+        element.textContent = stage.reason ? stage.status + ': ' + stage.reason : stage.status;
+        element.className = stage.status === 'ready' || stage.status === 'active' ? '' : 'unavailable';
+    }
+
+    function updateMetrics(metrics) {
+        const hasRNNoiseMetrics = metrics.rnnoise_avg_ms != null;
+        const hasHushMetrics = metrics.hush_avg_ms != null;
+        metricsSection.style.display = hasRNNoiseMetrics || hasHushMetrics ? '' : 'none';
+        if (hasRNNoiseMetrics) rnnoiseMetricsEl.textContent = formatMetrics(metrics.rnnoise_avg_ms, metrics.rnnoise_p95_ms, metrics.rnnoise_total_frames);
+        if (hasHushMetrics) hushMetricsEl.textContent = formatMetrics(metrics.hush_avg_ms, metrics.hush_p95_ms, metrics.hush_total_frames);
+    }
+
+    function formatMetrics(average, p95, frames) {
+        return 'avg=' + average.toFixed(2) + 'ms p95=' + (p95 == null ? '--' : p95.toFixed(2)) + 'ms frames=' + (frames || 0);
     }
 
     function updateStatus(state) {
         currentState = state;
         statusEl.textContent = state.charAt(0).toUpperCase() + state.slice(1);
         statusEl.className = 'status ' + state;
-        updateButtons();
-        updateModeSelection();
         permissionNotice.style.display = 'none';
-        if (state !== 'listening') {
-            stopPendingPoll();
-        }
+        startBtn.disabled = state !== 'idle' && state !== 'error';
+        stopBtn.disabled = state === 'idle' || state === 'stopping';
+        clearBtn.disabled = state !== 'idle';
+        deviceSelect.disabled = state !== 'idle';
     }
 
-    function updateButtons() {
-        const isIdle = currentState === 'idle';
-        const isError = currentState === 'error';
-        startBtn.disabled = !isIdle && !isError;
-        stopBtn.disabled = isIdle || currentState === 'stopping';
-        clearBtn.disabled = !isIdle;
-        deviceSelect.disabled = !isIdle;
-    }
-
-    function updateModeSelection() {
-        const isListening = currentState === 'listening';
-        const modes = {
-            raw: [rawLabel, rawStatus, null],
-            rnnoise: [rnnoiseLabel, rnnoiseStatusEl, rnnoiseRadio],
-            hush: [hushLabel, hushStatusEl, hushRadio],
-            combined: [combinedLabel, combinedStatusEl, combinedRadio]
-        };
-        Object.entries(modes).forEach(([mode, [label, status, radio]]) => {
-            const active = mode === currentMode;
-            label.classList.toggle('active', active);
-            if (active) {
-                status.textContent = isListening ? 'Processing' : 'Selected';
-                status.className = 'mode-status active';
-            } else if (!radio || !radio.disabled) {
-                status.textContent = 'Available';
-                status.className = 'mode-status';
-            }
-        });
-    }
-
-    function updatePendingMode(pending) {
-        if (!pending) return;
-        if (pending === 'rnnoise') {
-            rnnoiseLabel.classList.remove('active');
-            rnnoiseStatusEl.textContent = 'Switching...';
-            rnnoiseStatusEl.className = 'mode-status';
-        } else if (pending === 'raw') {
-            rawLabel.classList.remove('active');
-            rawStatus.textContent = 'Switching...';
-            rawStatus.className = 'mode-status';
-        } else if (pending === 'hush') {
-            hushLabel.classList.remove('active');
-            hushStatusEl.textContent = 'Switching...';
-            hushStatusEl.className = 'mode-status';
-        } else if (pending === 'combined') {
-            combinedLabel.classList.remove('active');
-            combinedStatusEl.textContent = 'Switching...';
-            combinedStatusEl.className = 'mode-status';
-        }
-    }
-
-    function updateMeter(rmsDbfs, peakDbfs) {
-        const normalized = Math.max(0, Math.min(100, (rmsDbfs + 60) * (100 / 60)));
-        meterEl.style.width = normalized + '%';
+    function updateMeter(rmsDbfs) {
+        meterEl.style.width = Math.max(0, Math.min(100, (rmsDbfs + 60) * (100 / 60))) + '%';
         meterDbEl.textContent = rmsDbfs.toFixed(1) + ' dB';
     }
 
     function handleTranscriptEvent(payload) {
-        const idx = transcript.findIndex(t =>
-            t.session_id === payload.session_id && t.segment_id === payload.segment_id
-        );
-        if (payload.kind === 'final') {
-            if (idx >= 0) {
-                transcript[idx] = payload;
-            } else {
-                transcript.push(payload);
-            }
-        } else if (payload.kind === 'partial') {
-            const existingPartial = transcript.findIndex(t =>
-                t.session_id === payload.session_id && t.kind === 'partial'
-            );
-            if (existingPartial >= 0) {
-                transcript[existingPartial] = payload;
-            } else {
-                transcript.push(payload);
-            }
-        }
+        const index = transcript.findIndex(entry => entry.session_id === payload.session_id && entry.segment_id === payload.segment_id);
+        if (index >= 0) transcript[index] = payload;
+        else transcript.push(payload);
         renderTranscript();
     }
 
     function renderTranscript() {
-        if (transcript.length === 0) {
+        if (!transcript.length) {
             transcriptEl.innerHTML = '<div class="transcript-placeholder">No transcript yet. Press Start to begin.</div>';
             return;
         }
-
-        const grouped = {};
-        transcript.forEach(entry => {
-            if (!grouped[entry.session_id]) grouped[entry.session_id] = [];
-            grouped[entry.session_id].push(entry);
-        });
-
-        let html = '';
-        for (const [sessionId, entries] of Object.entries(grouped)) {
-            html += '<div class="transcript-session-group">';
-            entries.forEach(entry => {
-                const cls = entry.kind === 'partial' ? 'partial' : 'final';
-                const text = escapeHtml(entry.text);
-                const modeTag = entry.mode && entry.mode !== 'raw' ? ' [' + entry.mode + ']' : '';
-                html += '<div class="transcript-entry ' + cls + '">' + text + '<span class="mode-tag">' + modeTag + '</span></div>';
-            });
-            html += '</div>';
-        }
-        transcriptEl.innerHTML = html;
+        transcriptEl.innerHTML = transcript.map(entry => '<div class="transcript-entry ' + (entry.kind === 'partial' ? 'partial' : 'final') + '">' + escapeHtml(entry.text) + '</div>').join('');
         transcriptEl.scrollTop = transcriptEl.scrollHeight;
     }
 
     function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        const element = document.createElement('div');
+        element.textContent = text;
+        return element.innerHTML;
     }
 
     async function handleStart() {
         hideError();
-        stopPendingPoll();
-        const deviceId = deviceSelect.value || '0';
-        const mode = currentMode || 'raw';
-        const record = document.getElementById('recordCheckbox') ? document.getElementById('recordCheckbox').checked : false;
         try {
-            const resp = await fetch('/api/start', {
+            const response = await fetch('/api/start', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Voice-Filtering': '1'
-                },
-                body: JSON.stringify({
-                    device_id: deviceId,
-                    mode: mode,
-                    record: record
-                })
+                headers: {'Content-Type': 'application/json', 'X-Voice-Filtering': '1'},
+                body: JSON.stringify({device_id: deviceSelect.value || '0', record: recordCheckbox.checked})
             });
-            const data = await resp.json();
+            const data = await response.json();
             if (data.error) {
                 showError(data.error.message);
-                if (data.error.code === 'AUDIO_DEVICE_ERROR') {
-                    permissionNotice.style.display = 'block';
-                }
-            } else {
-                if (data.mode) currentMode = data.mode;
-                updateStatus(data.state || 'listening');
-                applySnapshot(data);
+                if (data.error.code === 'AUDIO_DEVICE_ERROR') permissionNotice.style.display = 'block';
+                return;
             }
-        } catch (e) {
-            showError('Failed to start: ' + e.message);
+            applySnapshot(data);
+        } catch (error) {
+            showError('Failed to start: ' + error.message);
         }
     }
 
     async function handleStop() {
-        stopPendingPoll();
         try {
-            const resp = await fetch('/api/stop', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Voice-Filtering': '1'
-                },
-                body: '{}'
-            });
-            const data = await resp.json();
-            updateStatus(data.state || 'idle');
-        } catch (e) {
-            showError('Failed to stop: ' + e.message);
+            applySnapshot(await (await fetch('/api/stop', {method: 'POST'})).json());
+        } catch (error) {
+            showError('Failed to stop: ' + error.message);
         }
     }
 
     async function handleClear() {
         try {
-            const resp = await fetch('/api/transcript/clear', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Voice-Filtering': '1'
-                },
-                body: '{}'
-            });
-            const data = await resp.json();
-            if (data.error) {
-                showError(data.error.message);
-            } else {
+            const data = await (await fetch('/api/transcript/clear', {method: 'POST'})).json();
+            if (data.error) showError(data.error.message);
+            else {
                 transcript = [];
                 renderTranscript();
             }
-        } catch (e) {
-            showError('Failed to clear: ' + e.message);
+        } catch (error) {
+            showError('Failed to clear: ' + error.message);
         }
     }
 
     function handleCopy() {
-        const textToCopy = Array.from(transcriptEl.querySelectorAll('.transcript-entry'))
-            .map(el => {
-                const clone = el.cloneNode(true);
-                const tag = clone.querySelector('.mode-tag');
-                if (tag) tag.remove();
-                return clone.textContent;
-            })
-            .join(' ');
-
-        if (navigator.clipboard) {
-            navigator.clipboard.writeText(textToCopy).catch(() => {
-                fallbackCopy(textToCopy);
-            });
-        } else {
-            fallbackCopy(textToCopy);
-        }
+        const text = transcript.map(entry => entry.text).join(' ');
+        if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+        else fallbackCopy(text);
     }
 
     function fallbackCopy(text) {
@@ -469,102 +219,8 @@
         textarea.style.left = '-9999px';
         document.body.appendChild(textarea);
         textarea.select();
-        try {
-            document.execCommand('copy');
-        } catch (e) {
-            console.error('Copy failed:', e);
-        }
+        document.execCommand('copy');
         document.body.removeChild(textarea);
-    }
-
-    async function handleModeChange(e) {
-        const mode = e.target.value;
-        currentMode = mode;
-        try {
-            const resp = await fetch('/api/mode', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Voice-Filtering': '1'
-                },
-                body: JSON.stringify({ mode: mode })
-            });
-            const data = await resp.json();
-            if (data.error) {
-                showError(data.error.message);
-                e.target.checked = false;
-                currentMode = lastConfirmedMode;
-                document.querySelectorAll('input[name="mode"]').forEach(r => {
-                    if (r.value === currentMode) r.checked = true;
-                });
-                updateModeSelection();
-            } else {
-                applySnapshot(data);
-                if (data.pending_mode) {
-                    startPendingPoll();
-                }
-            }
-        } catch (err) {
-            showError('Failed to switch mode: ' + err.message);
-            currentMode = lastConfirmedMode;
-            document.querySelectorAll('input[name="mode"]').forEach(r => {
-                if (r.value === currentMode) r.checked = true;
-            });
-            updateModeSelection();
-        }
-    }
-
-    function startPendingPoll() {
-        stopPendingPoll();
-        var gen = ++_pendingPollGeneration;
-        var attempts = 0;
-        var maxAttempts = 30;
-        var intervalMs = 300;
-        function poll() {
-            if (gen !== _pendingPollGeneration) return;
-            if (attempts >= maxAttempts || currentState !== 'listening') {
-                currentMode = lastConfirmedMode;
-                document.querySelectorAll('input[name="mode"]').forEach(r => {
-                    if (r.value === currentMode) r.checked = true;
-                });
-                updateModeSelection();
-                return;
-            }
-            attempts++;
-            fetch('/api/state')
-                .then(function(resp) { return resp.json(); })
-                .then(function(snap) {
-                    if (gen !== _pendingPollGeneration) return;
-                    applySnapshot(snap);
-                    if (snap.pending_mode && currentState === 'listening') {
-                        _pendingPollTimer = setTimeout(poll, intervalMs);
-                    } else {
-                        lastConfirmedMode = snap.mode || lastConfirmedMode;
-                        currentMode = lastConfirmedMode;
-                        document.querySelectorAll('input[name="mode"]').forEach(r => {
-                            if (r.value === currentMode) r.checked = true;
-                        });
-                        updateModeSelection();
-                    }
-                })
-                .catch(function() {
-                    if (gen !== _pendingPollGeneration) return;
-                    currentMode = lastConfirmedMode;
-                    document.querySelectorAll('input[name="mode"]').forEach(r => {
-                        if (r.value === currentMode) r.checked = true;
-                    });
-                    updateModeSelection();
-                });
-        }
-        poll();
-    }
-
-    function stopPendingPoll() {
-        _pendingPollGeneration++;
-        if (_pendingPollTimer) {
-            clearTimeout(_pendingPollTimer);
-            _pendingPollTimer = null;
-        }
     }
 
     function showError(message) {

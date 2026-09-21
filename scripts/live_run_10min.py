@@ -73,11 +73,10 @@ def main():
     print(f"Service started (PID {service_proc.pid})")
     
     # 2. Start combined mode
-    print("Starting pipeline in 'raw' mode...")
+    print("Starting Combined pipeline...")
     try:
         start_resp = httpx.post("http://127.0.0.1:8765/api/start", json={
             "device_id": "0",
-            "mode": "raw",
             "record": False
         })
         if start_resp.status_code != 202:

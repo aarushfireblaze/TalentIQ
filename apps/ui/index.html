@@ -9,108 +9,41 @@
 <body>
     <div class="container">
         <header>
-            <h1>Voice Filtering</h1>
+            <h1>Combined Voice Filtering</h1>
             <div id="status" class="status idle">Idle</div>
         </header>
-
         <div class="controls">
             <div class="device-select">
                 <label for="device">Microphone:</label>
-                <select id="device" disabled>
-                    <option value="">Loading devices...</option>
-                </select>
-                <label class="record-label" title="Save WAV captures for QA">
-                    <input type="checkbox" id="recordCheckbox">
-                    <span>Record WAVs</span>
-                </label>
+                <select id="device" disabled><option value="">Loading devices...</option></select>
+                <label class="record-label" title="Save WAV captures for QA"><input type="checkbox" id="recordCheckbox"><span>Record WAVs</span></label>
             </div>
             <button id="startBtn" disabled>Start</button>
             <button id="stopBtn" disabled>Stop</button>
         </div>
-
         <div class="meter-container">
             <label>Input Level:</label>
-            <div class="meter-bar">
-                <div id="meter" class="meter-fill" style="width: 0%"></div>
-            </div>
+            <div class="meter-bar"><div id="meter" class="meter-fill" style="width: 0%"></div></div>
             <span id="meterDb" class="meter-db">-∞ dB</span>
         </div>
-
-        <div class="modes">
-            <h3>Pipeline Mode</h3>
-            <div class="mode-options">
-                <label class="mode-label" id="rawLabel">
-                    <input type="radio" name="mode" value="raw" checked>
-                    <span>Raw</span>
-                    <span class="mode-status" id="rawStatus"></span>
-                </label>
-                <label class="mode-label" id="rnnoiseLabel">
-                    <input type="radio" name="mode" value="rnnoise" id="rnnoiseRadio">
-                    <span>RNNoise</span>
-                    <span class="mode-status" id="rnnoiseStatus">Checking...</span>
-                </label>
-                <label class="mode-label disabled" id="hushLabel">
-                    <input type="radio" name="mode" value="hush" id="hushRadio" disabled>
-                    <span>Hush</span>
-                    <span class="mode-status unavailable" id="hushStatus">Checking...</span>
-                </label>
-                <label class="mode-label disabled" id="combinedLabel">
-                    <input type="radio" name="mode" value="combined" id="combinedRadio" disabled>
-                    <span>Combined</span>
-                    <span class="mode-status unavailable" id="combinedStatus">Checking...</span>
-                </label>
-            </div>
-        </div>
-
+        <p class="pipeline-description">RNNoise, one 16 kHz conversion, Hush, and local ASR.</p>
         <div class="transcript-section">
-            <div class="transcript-header">
-                <h3>Transcript</h3>
-                <div class="transcript-actions">
-                    <button id="copyBtn">Copy</button>
-                    <button id="clearBtn" disabled>Clear</button>
-                </div>
-            </div>
-            <div id="transcript" class="transcript-panel">
-                <div class="transcript-placeholder">No transcript yet. Press Start to begin.</div>
-            </div>
+            <div class="transcript-header"><h3>Transcript</h3><div class="transcript-actions"><button id="copyBtn">Copy</button><button id="clearBtn" disabled>Clear</button></div></div>
+            <div id="transcript" class="transcript-panel"><div class="transcript-placeholder">No transcript yet. Press Start to begin.</div></div>
         </div>
-
         <div class="info-section">
             <h3>System Info</h3>
             <div class="info-grid">
-                <div class="info-item">
-                    <label>Model:</label>
-                    <span id="modelInfo">faster-whisper-tiny.en</span>
-                </div>
-                <div class="info-item">
-                    <label>ASR Status:</label>
-                    <span id="asrStatus">Loading...</span>
-                </div>
-                <div class="info-item">
-                    <label>RNNoise:</label>
-                    <span id="rnnoiseInfo">Checking...</span>
-                </div>
-                <div class="info-item">
-                    <label>Hush:</label>
-                    <span id="hushInfo">Checking...</span>
-                </div>
-                <div class="info-item" id="metricsSection" style="display:none;">
-                    <label>RNNoise Timing:</label>
-                    <span id="rnnoiseMetrics">--</span><br>
-                    <label>Hush Timing:</label>
-                    <span id="hushMetrics">--</span>
-                </div>
+                <div class="info-item"><label>Model:</label><span id="modelInfo">faster-whisper-tiny.en</span></div>
+                <div class="info-item"><label>ASR Status:</label><span id="asrStatus">Loading...</span></div>
+                <div class="info-item"><label>RNNoise:</label><span id="rnnoiseInfo">Checking...</span></div>
+                <div class="info-item"><label>Hush:</label><span id="hushInfo">Checking...</span></div>
+                <div class="info-item" id="metricsSection" style="display:none;"><label>RNNoise Timing:</label><span id="rnnoiseMetrics">--</span><br><label>Hush Timing:</label><span id="hushMetrics">--</span></div>
             </div>
         </div>
-
-        <div class="permission-notice" id="permissionNotice" style="display: none;">
-            <p>Microphone permission is required. When you press Start, your browser/OS will ask for permission.
-            If denied, check System Settings → Privacy & Security → Microphone.</p>
-        </div>
-
+        <div class="permission-notice" id="permissionNotice" style="display: none;"><p>Microphone permission is required. When you press Start, your browser or OS will ask for permission. If denied, check System Settings → Privacy & Security → Microphone.</p></div>
         <div id="errorBanner" class="error-banner" style="display: none;"></div>
     </div>
-
     <script src="/app.js"></script>
 </body>
 </html>
