@@ -1,0 +1,93 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-heading: var(--font-heading);
+  
+  --color-jbh-yellow: #FEDB00;
+  --color-jbh-black: #211F20;
+  --color-jbh-blue: #005DBA;
+  --color-jbh-lightgray: #F5F5F6;
+  --color-jbh-gray: #E6E7E8;
+  
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  
+  --radius-sm: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.5rem;
+}
+
+:root {
+  /* J.B. Hunt Corporate Light Theme */
+  --background: #ffffff;
+  --foreground: #211F20;
+  
+  --card: #ffffff;
+  --card-foreground: #211F20;
+  
+  --primary: #FEDB00;
+  --primary-foreground: #211F20;
+  
+  --secondary: #005DBA;
+  --secondary-foreground: #ffffff;
+  
+  --muted: #F5F5F6;
+  --muted-foreground: #666666;
+  
+  --border: #E6E7E8;
+  --input: #ffffff;
+  --ring: #005DBA; 
+
+  --radius-sm: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.5rem;
+}
+
+/* Remove dark mode override to force the corporate light theme */
+.dark {
+  --background: #ffffff;
+  --foreground: #211F20;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+  }
+  
+  body {
+    @apply bg-background text-foreground antialiased selection:bg-jbh-yellow selection:text-jbh-black;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    font-weight: 800;
+  }
+
+  /* Override WebKit autofill styling to match our input background */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover, 
+  input:-webkit-autofill:focus, 
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px #f9f9f9 inset !important;
+    -webkit-text-fill-color: var(--foreground) !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
