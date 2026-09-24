@@ -1,0 +1,1 @@
+Brief conversation. Avery was candid about limited coding and product exposure. Do not infer technology skill from spreadsheet use or general club coordination. May be relevant to other roles, but the available evidence is not closely aligned to either sample role.

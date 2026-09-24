@@ -1,0 +1,57 @@
+- software engineering
+- software development lifecycle
+- programming
+- Python
+- Java
+- JavaScript
+- TypeScript
+- C++
+- SQL
+- HTML/CSS
+- data structures and algorithms
+- object-oriented programming
+- web development
+- API development
+- Git and version control
+- software testing
+- debugging
+- code review
+- databases
+- cloud computing
+- cybersecurity
+- data analysis
+- pandas
+- machine learning
+- technical coursework
+- academic software project
+- personal software project
+- open-source contribution
+- hackathon
+- research or capstone project
+- product management
+- product ownership
+- product thinking
+- product development
+- product requirements
+- requirements gathering
+- user stories
+- product backlog
+- backlog prioritization
+- roadmap planning
+- stakeholder management
+- customer research
+- user feedback
+- business analysis
+- process improvement
+- Agile
+- Scrum
+- cross-functional collaboration
+- written communication
+- verbal communication
+- presentation and demo
+- problem solving
+- decision making
+- prioritization
+- adaptability
+- initiative and ownership
+- learning ability

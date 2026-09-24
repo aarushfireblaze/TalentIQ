@@ -1,0 +1,57 @@
+- software engineering: null
+- software development lifecycle: null
+- programming: null
+- Python: null
+- Java: null
+- JavaScript: null
+- TypeScript: null
+- C++: null
+- SQL: null
+- HTML/CSS: null
+- data structures and algorithms: null
+- object-oriented programming: null
+- web development: null
+- API development: null
+- Git and version control: null
+- software testing: null
+- debugging: null
+- code review: null
+- databases: null
+- cloud computing: null
+- cybersecurity: null
+- data analysis: null
+- pandas: null
+- machine learning: null
+- technical coursework: null
+- academic software project: null
+- personal software project: null
+- open-source contribution: null
+- hackathon: null
+- research or capstone project: null
+- product management: null
+- product ownership: null
+- product thinking: null
+- product development: null
+- product requirements: null
+- requirements gathering: null
+- user stories: null
+- product backlog: null
+- backlog prioritization: null
+- roadmap planning: null
+- stakeholder management: null
+- customer research: null
+- user feedback: null
+- business analysis: null
+- process improvement: null
+- Agile: null
+- Scrum: null
+- cross-functional collaboration: null
+- written communication: null
+- verbal communication: null
+- presentation and demo: null
+- problem solving: null
+- decision making: null
+- prioritization: null
+- adaptability: null
+- initiative and ownership: null
+- learning ability: null

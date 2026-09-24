@@ -1,0 +1,1 @@
+Friendly and specific. Described her own contributions clearly and credited teammates. Asked about mentorship and how intern projects are chosen. Project evidence is credible but small in scope; no formal product or workplace experience.

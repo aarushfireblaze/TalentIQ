@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Talent IQ — Extraction Test</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #17212b; background: #f4f6f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { background: #fff; border-bottom: 1px solid #dce2e8; padding: 20px max(24px, calc((100vw - 1120px) / 2)); }
+    h1 { font-size: 1.3rem; margin: 0; }
+    main { max-width: 1120px; margin: 28px auto; padding: 0 24px 48px; }
+    .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; }
+    select, button { font: inherit; padding: 10px 12px; border: 1px solid #c9d2dc; border-radius: 6px; background: #fff; }
+    select { flex: 1; max-width: 520px; }
+    button { cursor: pointer; background: #174f76; border-color: #174f76; color: #fff; font-weight: 600; }
+    button:disabled { opacity: .55; cursor: wait; }
+    #status { min-height: 24px; color: #52606d; margin: 8px 0 18px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    section { background: #fff; border: 1px solid #dce2e8; border-radius: 8px; padding: 16px; min-width: 0; }
+    h2 { font-size: 1rem; margin: 0 0 10px; }
+    pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: #354250; }
+    #output { margin-top: 16px; }
+    .empty { color: #667482; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } .toolbar { align-items: stretch; flex-direction: column; } select { max-width: none; } }
+  </style>
+</head>
+<body>
+  <header><h1>Talent IQ · Extraction Test</h1></header>
+  <main>
+    <div class="toolbar">
+      <select id="candidate" aria-label="Choose a sample candidate"></select>
+      <button id="extract">Run extract</button>
+    </div>
+    <div id="status" role="status"></div>
+    <div class="grid">
+      <section><h2>Resume</h2><pre id="resume" class="empty">Choose a candidate to load the sample.</pre></section>
+      <section><h2>Recruiter conversation</h2><pre id="conversation" class="empty">Choose a candidate to load the sample.</pre></section>
+      <section><h2>Recruiter notes</h2><pre id="notes" class="empty">Choose a candidate to load the sample.</pre></section>
+      <section id="output"><h2>Extraction output</h2><pre class="empty">Run extraction to see tags.</pre></section>
+    </div>
+  </main>
+  <script>
+    const picker = document.querySelector('#candidate');
+    const status = document.querySelector('#status');
+    const button = document.querySelector('#extract');
+    let sample = null;
+
+    async function loadCandidate() {
+      status.textContent = 'Loading sample…';
+      document.querySelector('#output pre').textContent = 'Run extraction to see tags.';
+      try {
+        const response = await fetch(`/api/sample?id=${encodeURIComponent(picker.value)}`);
+        if (!response.ok) throw new Error((await response.json()).error || 'Could not load sample');
+        sample = await response.json();
+        for (const key of ['resume', 'conversation', 'notes']) {
+          const element = document.querySelector(`#${key}`);
+          element.textContent = sample[key];
+          element.classList.remove('empty');
+        }
+        status.textContent = '';
+      } catch (error) { status.textContent = error.message; }
+    }
+
+    picker.addEventListener('change', loadCandidate);
+    button.addEventListener('click', async () => {
+      if (!sample) return;
+      button.disabled = true;
+      status.textContent = 'Extracting with OpenRouter…';
+      const output = document.querySelector('#output pre');
+      output.textContent = 'Working…';
+      try {
+        const response = await fetch('/api/extract', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sample)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Extraction failed');
+        output.textContent = JSON.stringify(result, null, 2);
+        output.classList.remove('empty');
+        status.textContent = 'Extraction complete.';
+      } catch (error) { output.textContent = error.message; status.textContent = 'Extraction failed.'; }
+      finally { button.disabled = false; }
+    });
+
+    fetch('/api/candidates').then(response => response.json()).then(candidates => {
+      picker.replaceChildren(...candidates.map(candidate => {
+        const option = document.createElement('option');
+        option.value = candidate.id;
+        option.textContent = `${candidate.name} · ${candidate.year} · ${candidate.major}`;
+        return option;
+      }));
+      return candidates.length ? loadCandidate() : Promise.reject(new Error('No candidate samples found'));
+    }).catch(error => { status.textContent = error.message; });
+  </script>
+</body>
+</html>

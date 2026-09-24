@@ -1,0 +1,1 @@
+Detailed technical conversation; Sam gave a concrete debugging example and explained coordination across disciplines. Strong evidence for foundational software engineering, testing, and communication. No evidence yet of product ownership or stakeholder prioritization.

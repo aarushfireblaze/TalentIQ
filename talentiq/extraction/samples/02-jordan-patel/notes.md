@@ -1,0 +1,1 @@
+Strong candidate for product owner conversations: practical discovery, prioritization, and clear outcome measures. Jordan consistently distinguished personal work from teammates' work. Coding claims are modest; likely a stretch for a software engineering internship.
